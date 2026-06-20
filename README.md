@@ -58,7 +58,15 @@ docker-compose up -d
 | `AAM_ADMIN_PASSWORD` | 登录密码 | `admin123` |
 | `AAM_MASTER_PASSWORD` | 数据加密主密码（**不可更改**） | `change-me-please` |
 | `AAM_SESSION_SECRET` | Session 签名密钥 | `dev-secret-change-in-prod` |
-| `AAM_DB_PATH` | SQLite 数据库路径 | `./data/accounts.db` |
+| `AAM_DB_URL` | 数据库连接（PostgreSQL） | 空（用 SQLite） |
+| `AAM_DB_PATH` | SQLite 数据库路径（仅 SQLite 模式） | `./data/accounts.db` |
+
+### 数据库选择
+
+| 模式 | 配置 | 适用场景 |
+|---|---|---|
+| **PostgreSQL**（推荐） | `AAM_DB_URL=postgresql://user:pass@host/db` | 生产、多人、大数据量 |
+| **SQLite**（默认） | 不设 `AAM_DB_URL` | 开发、单机、小数据量 |
 
 ⚠️ **重要**：`AAM_MASTER_PASSWORD` 一旦设置后不可更改，否则旧密文无法解密。正式使用前务必修改。
 

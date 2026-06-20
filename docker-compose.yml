@@ -1,7 +1,27 @@
 version: "3.8"
 
 services:
-  ai-account-manager:
+  # ===== PostgreSQL 数据库 =====
+  db:
+    image: postgres:16-alpine
+    container_name: aam-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ai_account_manager
+      POSTGRES_USER: aam_user
+      POSTGRES_PASSWORD: aam_pass_2026
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aam_user -d ai_account_manager"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ===== AI 账号管理系统 =====
+  app:
     build: .
     container_name: ai-account-manager
     restart: unless-stopped
@@ -9,9 +29,16 @@ services:
       - "8000:8000"
     volumes:
       - ./data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
       # ⚠️ 正式使用前务必修改这三个密码！
       - AAM_ADMIN_PASSWORD=admin123
       - AAM_MASTER_PASSWORD=please-change-this-key
       - AAM_SESSION_SECRET=local-dev-secret-xyz
-      # - AAM_DB_PATH=/app/data/accounts.db
+      # 连接 PostgreSQL（与上面 db 服务一致）
+      - AAM_DB_URL=postgresql://aam_user:aam_pass_2026@db:5432/ai_account_manager
+
+volumes:
+  pgdata:

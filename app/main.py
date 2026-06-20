@@ -1247,9 +1247,9 @@ async def import_csv(
 def stats(session: Session = Depends(database.get_session)):
     total = session.exec(select(func.count(models.Account.id))).one()
     by_status = {}
-    for row in session.exec(select(models.Account.status, func.count(models.Account.id))).all():
+    for row in session.exec(select(models.Account.status, func.count(models.Account.id)).group_by(models.Account.status)).all():
         by_status[row[0] or "未设置"] = row[1]
     by_dept = {}
-    for row in session.exec(select(models.Account.department, func.count(models.Account.id))).all():
+    for row in session.exec(select(models.Account.department, func.count(models.Account.id)).group_by(models.Account.department)).all():
         by_dept[row[0] or "未设置"] = row[1]
     return JSONResponse({"total": total, "by_status": by_status, "by_department": by_dept})
