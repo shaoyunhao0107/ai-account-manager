@@ -97,12 +97,12 @@ def login_form(request: Request, err: Optional[str] = None):
 
 
 @app.post("/login")
-def login_submit(password: str = Form(...)):
-    if check_login(password):
+def login_submit(username: str = Form(...), password: str = Form(...)):
+    if check_login(username, password):
         resp = RedirectResponse(url="/", status_code=303)
         resp.set_cookie(
             key="aam_session",
-            value=make_session_cookie(),
+            value=make_session_cookie(username),
             httponly=True,
             samesite="lax",
             path="/",

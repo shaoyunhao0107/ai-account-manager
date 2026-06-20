@@ -1,10 +1,19 @@
-"""会话鉴权：单一管理员密码"""
+"""会话鉴权：用户名 + 密码"""
 import os
+import json
 from fastapi import Request, HTTPException, status
 from itsdangerous import URLSafeSerializer, BadSignature
 
-ADMIN_PASSWORD = os.environ.get("AAM_ADMIN_PASSWORD", "admin123")
 SESSION_SECRET = os.environ.get("AAM_SESSION_SECRET", "dev-secret-change-in-prod")
+
+# 用户列表：从环境变量 AAM_USERS 加载（JSON 格式），或用默认
+# 格式：[{"username":"admin","password":"admin123","name":"管理员"}]
+DEFAULT_USERS = json.dumps([{"username": "admin", "password": "admin123", "name": "管理员"}])
+_users_raw = os.environ.get("AAM_USERS", DEFAULT_USERS)
+try:
+    USERS = json.loads(_users_raw)
+except (json.JSONDecodeError, TypeError):
+    USERS = [{"username": "admin", "password": "admin123", "name": "管理员"}]
 
 _serializer = URLSafeSerializer(SESSION_SECRET, salt="aam-session")
 
@@ -21,8 +30,20 @@ def verify_session_cookie(cookie_value: str) -> bool:
         return False
 
 
-def check_login(password: str) -> bool:
-    return password == ADMIN_PASSWORD
+def check_login(username: str, password: str) -> bool:
+    """检查用户名+密码是否匹配"""
+    for u in USERS:
+        if u.get("username") == username and u.get("password") == password:
+            return True
+    return False
+
+
+def get_user_name(username: str) -> str:
+    """获取用户显示名"""
+    for u in USERS:
+        if u.get("username") == username:
+            return u.get("name", username)
+    return username
 
 
 def require_auth(request: Request):
