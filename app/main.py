@@ -1,7 +1,7 @@
 """FastAPI 主应用"""
 import io
 import base64
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -344,6 +344,87 @@ def category_edit(
     return RedirectResponse(url=f"/categories#{c.kind}", status_code=303)
 
 
+# ---------- 到期提醒 ----------
+# 默认提醒档位（单位：天）：3 天内紧急，7 天内警告，15 天内预警
+EXPIRY_THRESHOLDS = [3, 7, 15]
+# 只对处于以下状态的账号提醒到期（"被封"/"已停用" 不提醒）
+EXPIRY_ACTIVE_STATUSES = ("可用", "待交付")
+
+
+def _compute_expiry_stats(session: Session, today: Optional[date] = None) -> dict:
+    """计算到期提醒统计数据。
+
+    返回:
+        {
+            "today": date,
+            "buckets": {
+                3: [account, ...],   # today ≤ end < today+3
+                7: [...],
+                15: [...],
+            },
+            "expired": [...],         # end < today（已过期但状态仍是可用/待交付）
+            "soon_count": int,        # 15 天内到期的总数（不含已过期）
+            "total_alert": int,       # soon_count + 已过期数（用于角标）
+        }
+    """
+    today = today or date.today()
+    buckets: dict[int, list] = {d: [] for d in EXPIRY_THRESHOLDS}
+    expired: list = []
+
+    rows = session.exec(
+        select(models.Account).where(
+            models.Account.deleted_at.is_(None),
+            models.Account.status.in_(EXPIRY_ACTIVE_STATUSES),
+            models.Account.plan_end_date.is_not(None),
+        )
+    ).all()
+
+    for a in rows:
+        end = a.plan_end_date
+        if not end:
+            continue
+        delta = (end - today).days
+        if delta < 0:
+            expired.append(a)
+        elif delta < EXPIRY_THRESHOLDS[0]:
+            buckets[EXPIRY_THRESHOLDS[0]].append(a)
+        elif delta < EXPIRY_THRESHOLDS[1]:
+            buckets[EXPIRY_THRESHOLDS[1]].append(a)
+        elif delta < EXPIRY_THRESHOLDS[2]:
+            buckets[EXPIRY_THRESHOLDS[2]].append(a)
+
+    soon_count = sum(len(v) for v in buckets.values())
+    return {
+        "today": today,
+        "buckets": buckets,
+        "expired": expired,
+        "soon_count": soon_count,
+        "total_alert": soon_count + len(expired),
+    }
+
+
+@app.get("/expiry", response_class=HTMLResponse, dependencies=[Depends(require_auth)])
+def expiry_page(
+    request: Request,
+    session: Session = Depends(database.get_session),
+):
+    """到期提醒独立页面：按 3 / 7 / 15 天分组展示，并单独列出已过期账号。"""
+    stats = _compute_expiry_stats(session)
+    return templates.TemplateResponse(
+        request,
+        "expiry.html",
+        {
+            "today": stats["today"],
+            "buckets": stats["buckets"],
+            "expired": stats["expired"],
+            "thresholds": EXPIRY_THRESHOLDS,
+            "soon_count": stats["soon_count"],
+            "expired_count": len(stats["expired"]),
+            "total_alert": stats["total_alert"],
+        },
+    )
+
+
 # ---------- 列表 ----------
 @app.get("/", response_class=HTMLResponse, dependencies=[Depends(require_auth)])
 def list_accounts(
@@ -419,6 +500,9 @@ def list_accounts(
     page_range_end = min(total_pages, page + 2)
     page_numbers = list(range(page_range_start, page_range_end + 1))
 
+    # 到期提醒统计（用于列表页顶部横幅 + 导航角标）
+    expiry_stats = _compute_expiry_stats(session)
+
     return templates.TemplateResponse(
         request,
         "list.html",
@@ -446,6 +530,12 @@ def list_accounts(
             "next_page": page + 1,
             "start_index": offset + 1 if total > 0 else 0,
             "end_index": min(offset + page_size, total),
+            # 到期提醒
+            "expiry_total_alert": expiry_stats["total_alert"],
+            "expiry_soon_count": expiry_stats["soon_count"],
+            "expiry_expired_count": len(expiry_stats["expired"]),
+            "expiry_buckets": expiry_stats["buckets"],
+            "expiry_thresholds": EXPIRY_THRESHOLDS,
         },
     )
 
@@ -487,6 +577,26 @@ def _parse_date(s: str) -> Optional[date]:
             return datetime.strptime(s, fmt).date()
         except ValueError:
             continue
+    return None
+
+
+# 订阅默认周期（天）—— Claude / Codex 月订阅默认 30 天
+DEFAULT_PLAN_DAYS = 30
+
+
+def _resolve_plan_end(start_str: str, end_str: str) -> Optional[date]:
+    """智能计算 plan_end_date：
+
+    1. 用户显式填了 end_date → 用用户的值（支持续费后改成 60/90 天）
+    2. 只填了 start_date、没填 end_date → 自动 = start_date + 30 天
+    3. 都没填 → None
+    """
+    end = _parse_date(end_str)
+    if end:
+        return end
+    start = _parse_date(start_str)
+    if start:
+        return start + timedelta(days=DEFAULT_PLAN_DAYS)
     return None
 
 
@@ -554,7 +664,7 @@ def create_account(
         plan_amount=plan_amount,
         converted_to_codex=converted_to_codex,
         plan_start_date=_parse_date(plan_start_date),
-        plan_end_date=_parse_date(plan_end_date),
+        plan_end_date=_resolve_plan_end(plan_start_date, plan_end_date),
         distributed=distributed,
         first_batch_alloc=first_batch_alloc,
         ban1_is_banned=ban1_is_banned,
@@ -646,7 +756,7 @@ def update_account(
     a.plan_amount = plan_amount
     a.converted_to_codex = converted_to_codex
     a.plan_start_date = _parse_date(plan_start_date)
-    a.plan_end_date = _parse_date(plan_end_date)
+    a.plan_end_date = _resolve_plan_end(plan_start_date, plan_end_date)
     a.distributed = distributed
     a.first_batch_alloc = first_batch_alloc
     a.ban1_is_banned = ban1_is_banned
@@ -1168,7 +1278,7 @@ async def import_csv(
                 plan_amount=data.get("plan_amount", ""),
                 converted_to_codex=_to_bool(data.get("converted_to_codex")),
                 plan_start_date=_parse_date(data.get("plan_start_date", "")),
-                plan_end_date=_parse_date(data.get("plan_end_date", "")),
+                plan_end_date=_resolve_plan_end(data.get("plan_start_date", ""), data.get("plan_end_date", "")),
                 distributed=_to_bool(data.get("distributed")),
                 # 第 1 批 + 多合一凭证字段
                 first_batch_alloc=data.get("first_batch_alloc", ""),
@@ -1243,6 +1353,13 @@ async def import_csv(
 
 
 # ---------- 统计 ----------
+@app.get("/api/expiry-count", dependencies=[Depends(require_auth)])
+def expiry_count(session: Session = Depends(database.get_session)):
+    """供导航栏角标轮询使用，只返回数字。"""
+    stats = _compute_expiry_stats(session)
+    return JSONResponse({"total_alert": stats["total_alert"]})
+
+
 @app.get("/api/stats", dependencies=[Depends(require_auth)])
 def stats(session: Session = Depends(database.get_session)):
     total = session.exec(select(func.count(models.Account.id))).one()

@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block title %}到期提醒 · AI 账号管理{% endblock %}
+{% block content %}
+
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+  <div>
+    <h2 style="font-size:20px;font-weight:600;color:var(--text-primary);margin:0">⏰ 到期提醒</h2>
+    <p style="margin:4px 0 0;color:var(--text-tertiary);font-size:13px">
+      今天是 {{ today }} · 仅显示"可用 / 待交付"状态的账号（被封/已停用不提醒）<br>
+      <span style="color:var(--text-quaternary);font-size:12px">覆盖所有订阅制账号：Claude Code / Codex / Claude Pro 等</span>
+    </p>
+  </div>
+  <div style="display:flex;gap:8px">
+    <a href="/" class="btn btn-sm">← 返回列表</a>
+  </div>
+</div>
+
+{# ===== 总览卡片 ===== #}
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px">
+  <div class="stat-card stat-danger">
+    <div class="stat-label">已过期</div>
+    <div class="stat-value">{{ expired_count }}</div>
+    <div class="stat-hint">需立即处理</div>
+  </div>
+  <div class="stat-card stat-red">
+    <div class="stat-label">{{ thresholds[0] }} 天内</div>
+    <div class="stat-value">{{ buckets[thresholds[0]] | length }}</div>
+    <div class="stat-hint">紧急续费</div>
+  </div>
+  <div class="stat-card stat-amber">
+    <div class="stat-label">{{ thresholds[1] }} 天内</div>
+    <div class="stat-value">{{ buckets[thresholds[1]] | length }}</div>
+    <div class="stat-hint">即将到期</div>
+  </div>
+  <div class="stat-card stat-yellow">
+    <div class="stat-label">{{ thresholds[2] }} 天内</div>
+    <div class="stat-value">{{ buckets[thresholds[2]] | length }}</div>
+    <div class="stat-hint">提前预警</div>
+  </div>
+</div>
+
+{% if total_alert == 0 %}
+<div class="empty-banner">
+  ✅ 所有 Claude / Codex 账号订阅都在有效期内，暂无到期风险。
+</div>
+{% else %}
+
+{# ===== 已过期 ===== #}
+{% if expired %}
+<section class="group-section group-expired">
+  <div class="group-header">
+    <span class="group-dot dot-expired"></span>
+    <h3>已过期（状态仍是可用/待交付）</h3>
+    <span class="group-count">{{ expired | length }}</span>
+  </div>
+  <table class="expiry-table">
+    <thead>
+      <tr>
+        <th style="width:60px">ID</th>
+        <th>用户</th>
+        <th>部门</th>
+        <th>选型</th>
+        <th>到期日期</th>
+        <th>状态</th>
+        <th style="width:140px">操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in expired %}
+      <tr>
+        <td>{{ a.id }}</td>
+        <td>{{ a.user_name }}</td>
+        <td>{{ a.department or "—" }}</td>
+        <td>{{ a.plan_type or "—" }}</td>
+        <td class="mono" style="color:var(--status-red);font-weight:500">{{ a.plan_end_date }}</td>
+        <td>
+          {% if a.status == "可用" %}<span class="tag tag-ok">可用</span>
+          {% elif a.status == "待交付" %}<span class="tag tag-wait">待交付</span>
+          {% else %}<span class="tag tag-off">{{ a.status }}</span>{% endif %}
+        </td>
+        <td>
+          <a href="/accounts/{{ a.id }}" class="btn btn-sm">详情</a>
+          <a href="/accounts/{{ a.id }}/edit" class="btn btn-sm">改到期日</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{# ===== 按档位循环：3 / 7 / 15 天 ===== #}
+{% for days in thresholds %}
+  {% set rows = buckets[days] %}
+  {% if rows %}
+  <section class="group-section group-{{ days }}">
+    <div class="group-header">
+      <span class="group-dot dot-{{ days }}"></span>
+      <h3>{{ days }} 天内到期</h3>
+      <span class="group-count">{{ rows | length }}</span>
+    </div>
+    <table class="expiry-table">
+      <thead>
+        <tr>
+          <th style="width:60px">ID</th>
+          <th>用户</th>
+          <th>部门</th>
+          <th>选型</th>
+          <th>到期日期</th>
+          <th>剩余</th>
+          <th>状态</th>
+          <th style="width:140px">操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in rows %}
+        {% set delta = (a.plan_end_date - today).days %}
+        <tr>
+          <td>{{ a.id }}</td>
+          <td>{{ a.user_name }}</td>
+          <td>{{ a.department or "—" }}</td>
+          <td>{{ a.plan_type or "—" }}</td>
+          <td class="mono">{{ a.plan_end_date }}</td>
+          <td>
+            {% if delta <= 1 %}<span class="tag tag-ban">{{ delta }} 天</span>
+            {% elif delta <= 3 %}<span class="tag tag-wait">{{ delta }} 天</span>
+            {% else %}<span class="tag tag-off">{{ delta }} 天</span>{% endif %}
+          </td>
+          <td>
+            {% if a.status == "可用" %}<span class="tag tag-ok">可用</span>
+            {% elif a.status == "待交付" %}<span class="tag tag-wait">待交付</span>
+            {% else %}<span class="tag tag-off">{{ a.status }}</span>{% endif %}
+          </td>
+          <td>
+            <a href="/accounts/{{ a.id }}" class="btn btn-sm">详情</a>
+            <a href="/accounts/{{ a.id }}/edit" class="btn btn-sm">编辑</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+{% endfor %}
+
+{% endif %}
+
+<style>
+/* === 页面专属样式（不污染全局） === */
+.stat-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-standard);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  border-left: 3px solid var(--border-strong);
+}
+.stat-label { font-size: 12px; color: var(--text-tertiary); margin-bottom: 6px; }
+.stat-value { font-size: 28px; font-weight: 600; color: var(--text-primary); line-height: 1; }
+.stat-hint  { font-size: 11px; color: var(--text-quaternary); margin-top: 6px; }
+
+.stat-danger { border-left-color: var(--status-red); }
+.stat-danger .stat-value { color: var(--status-red); }
+.stat-red    { border-left-color: #dc2626; }
+.stat-red .stat-value    { color: #f87171; }
+.stat-amber  { border-left-color: var(--status-amber); }
+.stat-amber .stat-value  { color: var(--status-amber); }
+.stat-yellow { border-left-color: #ca8a04; }
+.stat-yellow .stat-value { color: #facc15; }
+
+.empty-banner {
+  background: rgba(16,185,129,0.08);
+  border: 1px solid rgba(16,185,129,0.2);
+  color: var(--status-green);
+  padding: 40px 24px;
+  text-align: center;
+  border-radius: var(--radius-lg);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.group-section {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-standard);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+  margin-bottom: 18px;
+}
+.group-header {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 14px;
+}
+.group-header h3 {
+  font-size: 14px; font-weight: 600; color: var(--text-primary); margin: 0;
+}
+.group-count {
+  background: rgba(255,255,255,0.06);
+  color: var(--text-secondary);
+  font-size: 11px; font-weight: 500;
+  padding: 2px 8px; border-radius: 10px;
+}
+.group-dot {
+  width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+}
+.dot-expired { background: var(--status-red); box-shadow: 0 0 0 3px rgba(239,68,68,0.15); }
+.dot-3       { background: #dc2626; box-shadow: 0 0 0 3px rgba(220,38,38,0.15); }
+.dot-7       { background: var(--status-amber); box-shadow: 0 0 0 3px rgba(245,158,11,0.15); }
+.dot-15      { background: #ca8a04; box-shadow: 0 0 0 3px rgba(202,138,4,0.15); }
+
+.group-expired { border-color: rgba(239,68,68,0.25); }
+
+.expiry-table { width: 100%; border-collapse: collapse; }
+.expiry-table th {
+  text-align: left; padding: 8px 10px;
+  font-size: 11px; font-weight: 500;
+  color: var(--text-tertiary);
+  border-bottom: 1px solid var(--border-standard);
+}
+.expiry-table td {
+  padding: 9px 10px; font-size: 13px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.expiry-table tr:last-child td { border-bottom: none; }
+.expiry-table tr:hover td { background: rgba(255,255,255,0.02); }
+.mono { font-family: 'JetBrains Mono', 'Consolas', monospace; font-size: 12px; }
+</style>
+
+{% endblock %}

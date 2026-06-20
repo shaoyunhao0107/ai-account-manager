@@ -237,11 +237,24 @@
     <div class="form-grid">
       <div class="form-group">
         <label>第一次套餐开始时间</label>
-        <input type="date" name="plan_start_date" value="{{ a.plan_start_date if a and a.plan_start_date else '' }}">
+        <input type="date" name="plan_start_date" id="plan_start_date"
+               value="{{ a.plan_start_date if a and a.plan_start_date else '' }}"
+               onchange="aamAutoEndDate()">
+        <div style="margin-top:4px;font-size:11px;color:var(--text-quaternary)">
+          填了开始日期后，到期日期会自动按 <b>+30 天</b> 计算（可手动覆盖）
+        </div>
       </div>
       <div class="form-group">
         <label>套餐到期日期</label>
-        <input type="date" name="plan_end_date" value="{{ a.plan_end_date if a and a.plan_end_date else '' }}">
+        <div style="display:flex;align-items:center;gap:6px">
+          <input type="date" name="plan_end_date" id="plan_end_date"
+                 value="{{ a.plan_end_date if a and a.plan_end_date else '' }}"
+                 placeholder="自动" style="flex:1">
+          <button type="button" class="btn btn-sm" onclick="aamAutoEndDate()" title="按开始日期 + 30 天填充">🔁 自动</button>
+        </div>
+        <div style="margin-top:4px;font-size:11px;color:var(--text-quaternary)">
+          留空时自动 = 开始日期 + 30 天；手动填写则以你填的为准（如续费后改 60 天）
+        </div>
       </div>
       <div class="checkbox-row">
         <input type="checkbox" name="distributed" id="distributed" {% if a and a.distributed %}checked{% endif %}>
@@ -343,6 +356,32 @@
     <a href="{% if a %}/accounts/{{ a.id }}{% else %}/{% endif %}" class="btn">取消</a>
   </div>
 </form>
+
+<script>
+// 智能到期日期：把 plan_end_date 填成 plan_start_date + 30 天
+// 仅在 end 为空时填充，避免覆盖用户已经填好的值
+function aamAutoEndDate() {
+  var startInput = document.getElementById('plan_start_date');
+  var endInput   = document.getElementById('plan_end_date');
+  if (!startInput || !endInput) return;
+  var startVal = startInput.value;
+  if (!startVal) return;
+  // 只在 end 为空时自动填充（用户手动填过则尊重）
+  if (endInput.value) return;
+  // 解析 yyyy-mm-dd 字符串为 Date（本地时区，避免 UTC 偏移）
+  var parts = startVal.split('-');
+  if (parts.length !== 3) return;
+  var d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+  d.setDate(d.getDate() + 30);
+  // 格式化回 yyyy-mm-dd
+  var yyyy = d.getFullYear();
+  var mm   = String(d.getMonth() + 1).padStart(2, '0');
+  var dd   = String(d.getDate()).padStart(2, '0');
+  endInput.value = yyyy + '-' + mm + '-' + dd;
+}
+// 页面加载时：如果是新增表单且 start 有值但 end 为空，预填一次
+document.addEventListener('DOMContentLoaded', aamAutoEndDate);
+</script>
 
 {% if a %}
 <script>

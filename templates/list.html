@@ -2,6 +2,35 @@
 {% block title %}账号列表 · AI 账号管理{% endblock %}
 {% block content %}
 
+{# === 到期提醒横幅（仅当有待处理账号时显示） === #}
+{% if expiry_total_alert and expiry_total_alert > 0 %}
+<div class="expiry-banner" id="expiry-banner">
+  <div class="expiry-banner-left">
+    <span class="expiry-icon">⏰</span>
+    <div class="expiry-text">
+      <div class="expiry-title">
+        到期提醒：<b>{{ expiry_total_alert }}</b> 个账号需要关注
+      </div>
+      <div class="expiry-breakdown">
+        {% if expiry_expired_count > 0 %}
+        <span class="chip chip-red">已过期 {{ expiry_expired_count }}</span>
+        {% endif %}
+        {% for days in expiry_thresholds %}
+          {% set cnt = expiry_buckets[days] | length %}
+          {% if cnt > 0 %}
+          <span class="chip chip-{{ days }}">{{ days }}天内 {{ cnt }}</span>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  <div class="expiry-banner-right">
+    <a href="/expiry" class="btn btn-sm btn-primary">查看详情 →</a>
+    <button type="button" class="btn btn-sm" onclick="document.getElementById('expiry-banner').style.display='none';document.cookie='aam_hide_expiry=1;path=/';">忽略</button>
+  </div>
+</div>
+{% endif %}
+
 <form class="filters" method="get" action="/">
   <input type="text" name="q" value="{{ q }}" placeholder="搜索 用户/邮箱/订单号/IP/verge/vless节点地址">
   <select name="department">
