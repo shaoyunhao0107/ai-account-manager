@@ -1,0 +1,315 @@
+{% extends "base.html" %}
+{% block title %}分类管理 · AI 账号管理{% endblock %}
+{% block content %}
+
+<h2 style="margin-top:0">⚙️ 分类管理</h2>
+<p style="color:var(--muted);margin-top:0">管理"账号选型"和"部门"的预设列表。这些值会出现在<strong>新增/编辑账号</strong>的下拉选项和<strong>列表筛选</strong>中。</p>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+
+  {# ============ 账号选型 ============ #}
+  <div id="plan_type" class="detail-section">
+    <h3 style="margin-top:0">📦 账号选型 <span style="color:var(--muted);font-size:12px">({{ plan_types|length }})</span></h3>
+
+    {# 添加 #}
+    <form method="post" action="/categories/add" style="display:flex;gap:6px;margin-bottom:14px">
+      <input type="hidden" name="kind" value="plan_type">
+      <input type="text" name="value" placeholder="新增选型（如 Codex 50X）" style="flex:1" required>
+      <button type="submit" class="btn btn-primary btn-sm">+ 添加</button>
+    </form>
+
+    {% if plan_types %}
+    {# 批量操作表单：包含全选 + 批量删除 #}
+    <form method="post" action="/categories/bulk-delete" id="form-plan_type"
+          onsubmit="return confirm('确定删除选中的 ' + document.querySelectorAll('.cat-check-plan_type:checked').length + ' 个选型？')">
+      <input type="hidden" name="kind" value="plan_type">
+
+      <div class="cat-bulk-bar" id="bulk-plan_type" style="display:none;background:var(--bg);border:1px solid var(--danger);padding:8px 12px;border-radius:6px;margin-bottom:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span id="count-plan_type" style="color:var(--danger);font-weight:600;font-size:12px">已选 0</span>
+        <button type="submit" class="btn btn-danger btn-sm">🗑️ 批量删除</button>
+        <button type="button" class="btn btn-sm" onclick="clearCats('plan_type')">取消</button>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th style="width:30px"><input type="checkbox" id="all-plan_type" onclick="toggleAllCats('plan_type', this)"></th>
+            <th style="width:40px">#</th>
+            <th>选型名称</th>
+            <th style="width:180px">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in plan_types %}
+          <tr id="row-pt-{{ c.id }}">
+            <td><input type="checkbox" name="ids" value="{{ c.id }}" class="cat-check-plan_type" onclick="updateCatBar('plan_type')"></td>
+            <td>{{ loop.index }}</td>
+            <td>
+              <span class="cat-view-pt-{{ c.id }}">{{ c.value }}</span>
+              <input type="text" name="value" value="{{ c.value }}"
+                     class="cat-edit-pt-{{ c.id }}"
+                     style="display:none;background:var(--bg);color:var(--text);border:1px solid var(--primary);border-radius:4px;padding:4px 8px;font-size:13px;width:100%">
+            </td>
+            <td>
+              {# 查看模式：上移 / 编辑 / 删除 #}
+              <span class="cat-actions-view-pt-{{ c.id }}">
+                <button type="button" class="btn btn-sm" title="上移"
+                        onclick="location.href='/categories/{{ c.id }}/up'"
+                        {% if loop.first %}disabled{% endif %}>↑</button>
+                <button type="button" class="btn btn-sm" title="编辑"
+                        onclick="enterCatEdit('pt', {{ c.id }})">✏️</button>
+                <button type="button" class="btn btn-sm btn-danger" title="删除"
+                        onclick="if(confirm('删除选型「{{ c.value }}」？')) location.href='/categories/{{ c.id }}/delete'">删</button>
+              </span>
+              {# 编辑模式：保存 / 取消（独立 form 提交到 edit 路由） #}
+              <span class="cat-actions-edit-pt-{{ c.id }}" style="display:none">
+                <button type="button" class="btn btn-sm btn-primary"
+                        onclick="saveCatEdit('pt', {{ c.id }})">💾 保存</button>
+                <button type="button" class="btn btn-sm"
+                        onclick="exitCatEdit('pt', {{ c.id }})">取消</button>
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </form>
+    {% else %}
+    <p style="color:var(--muted)">无预设</p>
+    {% endif %}
+
+    {# 批量导入 #}
+    <details style="margin-top:14px">
+      <summary class="btn btn-sm" style="cursor:pointer">📥 批量导入（每行一个）</summary>
+      <form method="post" action="/categories/import" enctype="multipart/form-data" style="margin-top:10px">
+        <input type="hidden" name="kind" value="plan_type">
+        <div class="form-group" style="margin-bottom:8px">
+          <label>粘贴文本（每行一个选型）</label>
+          <textarea name="text" rows="4" placeholder="Codex 5X&#10;Claude Code Max&#10;..."></textarea>
+        </div>
+        <div class="form-group" style="margin-bottom:10px">
+          <label>或上传 txt 文件（每行一个）</label>
+          <input type="file" name="file" accept=".txt,.csv">
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">导入</button>
+      </form>
+    </details>
+  </div>
+
+  {# ============ 部门 ============ #}
+  <div id="department" class="detail-section">
+    <h3 style="margin-top:0">🏢 部门 <span style="color:var(--muted);font-size:12px">({{ departments|length }} 个部门，{{ no_dept_users|length }} 个用户未分配部门)</span></h3>
+
+    {# 添加 #}
+    <form method="post" action="/categories/add" style="display:flex;gap:6px;margin-bottom:14px">
+      <input type="hidden" name="kind" value="department">
+      <input type="text" name="value" placeholder="新增部门" style="flex:1" required>
+      <button type="submit" class="btn btn-primary btn-sm">+ 添加</button>
+    </form>
+
+    {# 🆕 导入 用户-部门 对应表 #}
+    <details style="margin-bottom:14px;background:var(--bg);padding:8px 12px;border-radius:6px;border:1px solid var(--primary)">
+      <summary style="cursor:pointer;color:var(--primary);font-weight:600;font-size:13px">📊 导入「用户-部门」对应表（CSV）</summary>
+      <div style="margin-top:10px;color:var(--muted);font-size:12px;line-height:1.7">
+        <p style="margin:0 0 6px"><b>格式</b>：每行一条，第一列=用户名，第二列=部门名。分隔符支持逗号或 Tab。</p>
+        <p style="margin:0 0 6px"><b>示例</b>：</p>
+        <pre style="background:var(--card);padding:8px;border-radius:4px;margin:0 0 8px;font-size:11px">张三,中国事业部
+李四,国际事业部
+王五,AI变革组</pre>
+        <p style="margin:0 0 6px">• 用户已存在（按姓名匹配）→ <b>更新其部门</b><br>
+           • 用户不存在 → <b>新建账号</b>（仅含姓名+部门，其他字段待补）<br>
+           • 新部门会自动加入左侧预设</p>
+      </div>
+      <form method="post" action="/categories/import-users" enctype="multipart/form-data" style="margin-top:10px">
+        <div class="form-group" style="margin-bottom:8px">
+          <label>粘贴 CSV 文本</label>
+          <textarea name="text" rows="5" placeholder="张三,中国事业部&#10;李四,国际事业部"></textarea>
+        </div>
+        <div class="form-group" style="margin-bottom:10px">
+          <label>或上传 CSV/XLSX 文件（第1列=用户，第2列=部门）</label>
+          <input type="file" name="file" accept=".csv,.txt,.xlsx">
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">📊 导入对应表</button>
+      </form>
+    </details>
+
+    {% if departments %}
+    <form method="post" action="/categories/bulk-delete" id="form-department"
+          onsubmit="return confirm('确定删除选中的 ' + document.querySelectorAll('.cat-check-department:checked').length + ' 个部门？删除预设不会影响已有账号的部门字段。')">
+      <input type="hidden" name="kind" value="department">
+
+      <div class="cat-bulk-bar" id="bulk-department" style="display:none;background:var(--bg);border:1px solid var(--danger);padding:8px 12px;border-radius:6px;margin-bottom:8px;align-items:center;gap:10px;flex-wrap:wrap">
+        <span id="count-department" style="color:var(--danger);font-weight:600;font-size:12px">已选 0</span>
+        <button type="submit" class="btn btn-danger btn-sm">🗑️ 批量删除</button>
+        <button type="button" class="btn btn-sm" onclick="clearCats('department')">取消</button>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th style="width:30px"><input type="checkbox" id="all-department" onclick="toggleAllCats('department', this)"></th>
+            <th style="width:40px">#</th>
+            <th>部门名称（点击展开看成员工）</th>
+            <th style="width:60px">人数</th>
+            <th style="width:180px">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in departments %}
+          {% set members = dept_members.get(c.id, []) %}
+          <tr id="row-dept-{{ c.id }}">
+            <td><input type="checkbox" name="ids" value="{{ c.id }}" class="cat-check-department" onclick="updateCatBar('department')"></td>
+            <td>{{ loop.index }}</td>
+            <td>
+              <details style="margin:0">
+                <summary style="cursor:pointer;padding:4px 0;list-style-position:inside">
+                  <span class="cat-view-dept-{{ c.id }}">{{ c.value }}</span>
+                  <input type="text" value="{{ c.value }}"
+                         class="cat-edit-dept-{{ c.id }}"
+                         style="display:none;background:var(--bg);color:var(--text);border:1px solid var(--primary);border-radius:4px;padding:4px 8px;font-size:13px;width:60%"
+                         onclick="event.stopPropagation()">
+                </summary>
+                {% if members %}
+                <div style="padding:6px 0 6px 24px;color:var(--muted);font-size:12px;line-height:1.8">
+                  {% for m in members %}
+                  <span style="display:inline-block;margin:2px 6px;padding:2px 8px;background:var(--bg);border:1px solid var(--border);border-radius:10px">
+                    <a href="/accounts/{{ m[0] }}" style="color:inherit">{{ m[1] }}</a>
+                  </span>
+                  {% endfor %}
+                </div>
+                {% else %}
+                <div style="padding:6px 0 6px 24px;color:var(--muted);font-size:11px;font-style:italic">（暂无成员）</div>
+                {% endif %}
+              </details>
+            </td>
+            <td style="text-align:center;color:var(--muted)">{{ members|length }}</td>
+            <td>
+              <span class="cat-actions-view-dept-{{ c.id }}">
+                <button type="button" class="btn btn-sm" title="上移"
+                        onclick="location.href='/categories/{{ c.id }}/up'"
+                        {% if loop.first %}disabled{% endif %}>↑</button>
+                <button type="button" class="btn btn-sm" title="编辑"
+                        onclick="enterCatEdit('dept', {{ c.id }})">✏️</button>
+                <button type="button" class="btn btn-sm btn-danger" title="删除"
+                        onclick="if(confirm('删除部门「{{ c.value }}」？')) location.href='/categories/{{ c.id }}/delete'">删</button>
+              </span>
+              <span class="cat-actions-edit-dept-{{ c.id }}" style="display:none">
+                <button type="button" class="btn btn-sm btn-primary"
+                        onclick="saveCatEdit('dept', {{ c.id }})">💾 保存</button>
+                <button type="button" class="btn btn-sm"
+                        onclick="exitCatEdit('dept', {{ c.id }})">取消</button>
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </form>
+
+    {# 未分配部门的用户 #}
+    {% if no_dept_users %}
+    <details style="margin-top:14px;background:var(--bg);padding:8px 12px;border-radius:6px;border:1px dashed var(--warn)">
+      <summary style="cursor:pointer;color:var(--warn);font-size:12px">⚠️ {{ no_dept_users|length }} 个用户未分配部门（点击查看）</summary>
+      <div style="padding:8px 0 0;color:var(--muted);font-size:12px;line-height:1.8">
+        {% for u in no_dept_users %}
+        <span style="display:inline-block;margin:2px 6px;padding:2px 8px;background:var(--card);border:1px solid var(--border);border-radius:10px">
+          <a href="/accounts/{{ u[0] }}/edit" style="color:inherit">{{ u[1] }}</a>
+        </span>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+
+    {% else %}
+    <p style="color:var(--muted)">无预设。可通过上方「导入用户-部门对应表」一次性建立。</p>
+    {% endif %}
+
+    {# 单纯批量加部门名（不含用户对应） #}
+    <details style="margin-top:14px">
+      <summary class="btn btn-sm" style="cursor:pointer">📥 仅批量加部门名（每行一个）</summary>
+      <form method="post" action="/categories/import" enctype="multipart/form-data" style="margin-top:10px">
+        <input type="hidden" name="kind" value="department">
+        <div class="form-group" style="margin-bottom:8px">
+          <label>粘贴文本（每行一个部门）</label>
+          <textarea name="text" rows="4" placeholder="中国事业部&#10;国际事业部&#10;..."></textarea>
+        </div>
+        <div class="form-group" style="margin-bottom:10px">
+          <label>或上传 txt 文件（每行一个）</label>
+          <input type="file" name="file" accept=".txt,.csv">
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">导入</button>
+      </form>
+    </details>
+  </div>
+
+</div>
+
+<p style="margin-top:20px"><a href="/" class="btn">← 返回列表</a></p>
+
+<script>
+// ============ 多选 / 全选 / 批量删除 ============
+function toggleAllCats(kind, master) {
+  document.querySelectorAll('.cat-check-' + kind).forEach(function(cb) { cb.checked = master.checked; });
+  updateCatBar(kind);
+}
+function clearCats(kind) {
+  document.querySelectorAll('.cat-check-' + kind).forEach(function(cb) { cb.checked = false; });
+  var m = document.getElementById('all-' + kind); if (m) m.checked = false;
+  updateCatBar(kind);
+}
+function updateCatBar(kind) {
+  var checked = document.querySelectorAll('.cat-check-' + kind + ':checked');
+  var bar = document.getElementById('bulk-' + kind);
+  var count = document.getElementById('count-' + kind);
+  if (checked.length > 0) {
+    bar.style.display = 'flex';
+    count.textContent = '已选 ' + checked.length;
+  } else {
+    bar.style.display = 'none';
+  }
+  var allBoxes = document.querySelectorAll('.cat-check-' + kind);
+  var master = document.getElementById('all-' + kind);
+  if (master && allBoxes.length > 0) {
+    master.checked = (checked.length === allBoxes.length);
+  }
+}
+
+// ============ 行内编辑（不离开页面，用 fetch 提交） ============
+function enterCatEdit(prefix, id) {
+  // 隐藏查看模式，显示编辑模式
+  document.querySelector('.cat-view-' + prefix + '-' + id).style.display = 'none';
+  document.querySelector('.cat-edit-' + prefix + '-' + id).style.display = '';
+  document.querySelector('.cat-actions-view-' + prefix + '-' + id).style.display = 'none';
+  document.querySelector('.cat-actions-edit-' + prefix + '-' + id).style.display = '';
+  document.querySelector('.cat-edit-' + prefix + '-' + id).focus();
+  document.querySelector('.cat-edit-' + prefix + '-' + id).select();
+}
+function exitCatEdit(prefix, id) {
+  document.querySelector('.cat-view-' + prefix + '-' + id).style.display = '';
+  document.querySelector('.cat-edit-' + prefix + '-' + id).style.display = 'none';
+  document.querySelector('.cat-actions-view-' + prefix + '-' + id).style.display = '';
+  document.querySelector('.cat-actions-edit-' + prefix + '-' + id).style.display = 'none';
+}
+function saveCatEdit(prefix, id) {
+  var input = document.querySelector('.cat-edit-' + prefix + '-' + id);
+  var newValue = input.value.trim();
+  if (!newValue) { alert('值不能为空'); return; }
+  // 用 fetch 提交到 /categories/{id}/edit
+  var fd = new FormData();
+  fd.append('value', newValue);
+  fetch('/categories/' + id + '/edit', { method: 'POST', body: fd, credentials: 'same-origin' })
+    .then(function(r) {
+      if (r.ok) {
+        // 更新页面上的显示值
+        document.querySelector('.cat-view-' + prefix + '-' + id).textContent = newValue;
+        // 更新原始 input 的默认值（取消时能还原）
+        input.defaultValue = newValue;
+        exitCatEdit(prefix, id);
+      } else {
+        alert('保存失败 (HTTP ' + r.status + ')');
+      }
+    })
+    .catch(function(e) { alert('错误：' + e.message); });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,355 @@
+{% extends "base.html" %}
+{% block title %}{% if a %}编辑{% else %}新增{% endif %}账号 · AI 账号管理{% endblock %}
+
+{# 通用凭证粘贴区：只在编辑已有账号时显示（新账号无 id 不能上传） #}
+{% macro voucher_zone(label, aid, field, image_path) %}
+  {% if a %}
+  <div class="form-group" style="margin-bottom:10px">
+    <label>{{ label }} <span style="color:var(--muted);font-size:11px">(支持拖拽图片 / 点击上传 / Ctrl+V 粘贴)</span></label>
+    <div id="zone-{{ field }}"
+         style="padding:14px;background:var(--card);border:2px dashed var(--border);border-radius:6px;min-height:80px;outline:none;transition:border-color .15s"
+         onfocus="this.style.borderColor='var(--primary)'"
+         onblur="this.style.borderColor='var(--border)'"
+         ondragover="event.preventDefault(); this.style.borderColor='var(--primary)'; this.style.background='rgba(79,140,255,0.05)'"
+         ondragleave="this.style.borderColor='var(--border)'; this.style.background='var(--card)'"
+         ondrop="event.preventDefault(); this.style.borderColor='var(--border)'; this.style.background='var(--card)'; aamDropImage(event, {{ aid }}, '{{ field }}')">
+      {% if image_path %}
+      {# 已有图片：显示缩略图（点击放大） + 删除按钮 #}
+      <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap">
+        <img src="{{ image_path }}" alt="{{ label }}" style="max-width:200px;max-height:140px;cursor:zoom-in;border:1px solid var(--border);border-radius:4px"
+             onclick="aamOpenLightbox('{{ image_path }}', '{{ label }}')">
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <button type="button" class="btn btn-sm" onclick="aamClearVoucher({{ aid }}, '{{ field }}')">🗑️ 删除图片</button>
+          <span style="color:var(--muted);font-size:11px">点击图片放大</span>
+          <span style="color:var(--muted);font-size:11px">如需换图：先删除，再上传新图</span>
+        </div>
+      </div>
+      {% else %}
+      {# 无图片：显示上传提示 + 拖拽 + 文件选择 + 粘贴 #}
+      <div style="display:flex;flex-direction:column;gap:10px;color:var(--muted)">
+        <div style="text-align:center;padding:8px 0;font-size:13px">
+          📷 <b>拖拽图片到此</b> 或点击下方按钮上传
+        </div>
+        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+          <label class="btn btn-sm btn-primary" style="cursor:pointer">
+            📁 选择图片文件
+            <input type="file" accept="image/*" style="display:none"
+                   onchange="aamPickVoucher(this, {{ aid }}, '{{ field }}')">
+          </label>
+          <button type="button" class="btn btn-sm" onclick="aamTriggerClipboard({{ aid }}, '{{ field }}')">
+            📋 从剪贴板粘贴
+          </button>
+        </div>
+        <div style="text-align:center;font-size:11px;color:var(--muted)">
+          支持 PNG / JPG / GIF / WebP · 也可直接在此区域按 <kbd style="padding:1px 4px;background:var(--bg);border:1px solid var(--border);border-radius:2px">Ctrl+V</kbd>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+{% endmacro %}
+
+{% block content %}
+
+<h2 style="margin-top:0">{% if a %}编辑 #{{ a.id }} — {{ a.user_name }}{% else %}新增账号{% endif %}</h2>
+
+<form method="post" action="{% if a %}/accounts/{{ a.id }}{% else %}/accounts{% endif %}">
+  <fieldset>
+    <legend>A · 基础信息</legend>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>用户姓名 *</label>
+        <input type="text" name="user_name" value="{{ a.user_name if a else '' }}" required>
+      </div>
+      <div class="form-group">
+        <label>部门</label>
+        <input list="dept-list" name="department" value="{{ a.department if a else '' }}">
+        <datalist id="dept-list">
+          {% for d in departments or [] %}<option value="{{ d }}">{% endfor %}
+        </datalist>
+      </div>
+      <div class="form-group">
+        <label>账号选型</label>
+        <input list="plan-list" name="plan_type" value="{{ a.plan_type if a else '' }}">
+        <datalist id="plan-list">
+          {% for p in plan_types or [] %}<option value="{{ p }}">{% endfor %}
+        </datalist>
+      </div>
+      <div class="form-group">
+        <label>首次开号日期</label>
+        <input type="date" name="first_open_date" value="{{ a.first_open_date if a and a.first_open_date else '' }}">
+      </div>
+      <div class="form-group">
+        <label>当前状态</label>
+        <select name="status">
+          {% set cur_status = a.status if a else '可用' %}
+          {% for s in ['可用','被封','待交付','已停用'] %}
+          <option value="{{ s }}" {% if s == cur_status %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>B · 交付与安装</legend>
+    <div class="form-grid">
+      <div class="checkbox-row">
+        <input type="checkbox" name="delivered" id="delivered" {% if a and a.delivered %}checked{% endif %}>
+        <label for="delivered">已交付</label>
+      </div>
+      <div class="checkbox-row">
+        <input type="checkbox" name="installed" id="installed" {% if a and a.installed %}checked{% endif %}>
+        <label for="installed">已安装</label>
+      </div>
+      <div class="form-group">
+        <label>交付日期</label>
+        <input type="date" name="delivery_date" value="{{ a.delivery_date if a and a.delivery_date else '' }}">
+      </div>
+      <div class="form-group">
+        <label>安装人 / 方式</label>
+        <input type="text" name="installer" value="{{ a.installer if a else '' }}" placeholder="如：方波装的">
+      </div>
+      <div class="form-group">
+        <label>电脑系统及版本</label>
+        <input type="text" name="os_version" value="{{ a.os_version if a else '' }}">
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>C · 服务器 / VPS</legend>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>服务器订单号</label>
+        <div style="display:flex;gap:6px">
+          <input type="text" name="server_order" value="{{ a.server_order if a else '' }}" placeholder="C20260528178522" style="flex:1">
+          {% if a and a.server_order %}
+          <button type="button" class="btn btn-sm" style="padding:4px 10px;flex-shrink:0"
+                  onclick="aamCopyB64('{{ a.server_order | b64encode }}', this)">📋</button>
+          {% endif %}
+        </div>
+      </div>
+      <div class="form-group">
+        <label>VPS IP (脱敏格式 39/71/123/187)</label>
+        <div style="display:flex;gap:6px">
+          <input type="text" name="vps_ip_masked" value="{{ a.vps_ip_masked if a else '' }}" placeholder="39/71/123/187" style="flex:1">
+          {% if a and a.vps_ip_masked %}
+          <button type="button" class="btn btn-sm" style="padding:4px 10px;flex-shrink:0"
+                  onclick="aamCopyB64('{{ a.vps_ip_masked | b64encode }}', this)">📋</button>
+          {% endif %}
+        </div>
+      </div>
+      <div class="form-group">
+        <label>新 VPS 地址 (换机时填)</label>
+        <input type="text" name="new_vps_address" value="{{ a.new_vps_address if a else '' }}">
+      </div>
+      <div class="checkbox-row">
+        <input type="checkbox" name="vps_pure" id="vps_pure" {% if a and a.vps_pure %}checked{% endif %}>
+        <label for="vps_pure">VPS 纯净</label>
+      </div>
+      <div class="checkbox-row">
+        <input type="checkbox" name="vps_in_use" id="vps_in_use" {% if a and a.vps_in_use %}checked{% endif %}>
+        <label for="vps_in_use">VPS 使用中</label>
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>D · 节点配置 <span style="color:var(--muted);font-size:11px">(输入框下方可展开查看明文 + 复制)</span></legend>
+    <div class="form-group" style="margin-bottom:14px">
+      <label>verge 地址 (clash / 小猫咪)</label>
+      <textarea name="verge_url" rows="2">{{ a.verge_url if a else '' }}</textarea>
+      {% if a and a.verge_url %}
+      <details style="margin-top:6px;background:var(--bg);padding:6px 10px;border-radius:6px;border:1px solid var(--border)">
+        <summary style="cursor:pointer;color:var(--primary);font-family:var(--mono);word-break:break-all">
+          {{ a.verge_url[:70] }}{% if a.verge_url|length > 70 %}…{% endif %}
+        </summary>
+        <div class="mono" style="word-break:break-all;padding:8px;background:var(--card);border-radius:4px;font-size:12px;margin-top:6px">{{ a.verge_url }}</div>
+        <button type="button" class="btn btn-sm btn-primary" style="margin-top:6px"
+                onclick="aamCopyB64('{{ a.verge_url | b64encode }}', this)">📋 复制完整 URL</button>
+      </details>
+      {% endif %}
+    </div>
+    <div class="form-group">
+      <label>vlmess / vless 地址 (小火箭)</label>
+      <textarea name="vlmess_url" rows="2">{{ a.vlmess_url if a else '' }}</textarea>
+      {% if a and a.vlmess_url %}
+      <details style="margin-top:6px;background:var(--bg);padding:6px 10px;border-radius:6px;border:1px solid var(--border)">
+        <summary style="cursor:pointer;color:var(--primary);font-family:var(--mono);word-break:break-all">
+          {{ a.vlmess_url[:70] }}{% if a.vlmess_url|length > 70 %}…{% endif %}
+        </summary>
+        <div class="mono" style="word-break:break-all;padding:8px;background:var(--card);border-radius:4px;font-size:12px;margin-top:6px">{{ a.vlmess_url }}</div>
+        <button type="button" class="btn btn-sm btn-primary" style="margin-top:6px"
+                onclick="aamCopyB64('{{ a.vlmess_url | b64encode }}', this)">📋 复制完整 URL</button>
+      </details>
+      {% endif %}
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>E · 账号凭证 <span style="color:var(--warn);font-size:11px">(密码字段加密存储)</span></legend>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>CC 邮箱</label>
+        <div style="display:flex;gap:6px">
+          <input type="email" name="cc_email" value="{{ a.cc_email if a else '' }}" style="flex:1">
+          {% if a and a.cc_email %}
+          <button type="button" class="btn btn-sm" style="padding:4px 10px;flex-shrink:0"
+                  onclick="aamCopyB64('{{ a.cc_email | b64encode }}', this)">📋</button>
+          {% endif %}
+        </div>
+      </div>
+      <div class="form-group">
+        <label>邮箱密码 {% if a and a.email_password_enc %}<span style="color:var(--success);font-size:11px">(已设置，留空则不修改)</span>{% endif %}</label>
+        <div style="display:flex;gap:6px">
+          <input type="text" name="email_password" value="{{ email_password_plain if email_password_plain else '' }}" autocomplete="off" style="flex:1">
+          {% if email_password_plain %}
+          <button type="button" class="btn btn-sm" style="padding:4px 10px;flex-shrink:0"
+                  onclick="aamCopyB64('{{ email_password_plain | b64encode }}', this)">📋</button>
+          {% endif %}
+        </div>
+      </div>
+      <div class="form-group">
+        <label>GPT 密码 {% if a and a.gpt_password_enc %}<span style="color:var(--success);font-size:11px">(已设置，留空则不修改)</span>{% endif %}</label>
+        <div style="display:flex;gap:6px">
+          <input type="text" name="gpt_password" value="{{ gpt_password_plain if gpt_password_plain else '' }}" autocomplete="off" style="flex:1">
+          {% if gpt_password_plain %}
+          <button type="button" class="btn btn-sm" style="padding:4px 10px;flex-shrink:0"
+                  onclick="aamCopyB64('{{ gpt_password_plain | b64encode }}', this)">📋</button>
+          {% endif %}
+        </div>
+      </div>
+      <div class="form-group">
+        <label>套餐金额</label>
+        <input type="text" name="plan_amount" value="{{ a.plan_amount if a else '' }}" placeholder="如：100刀">
+      </div>
+      <div class="checkbox-row">
+        <input type="checkbox" name="converted_to_codex" id="converted_to_codex" {% if a and a.converted_to_codex %}checked{% endif %}>
+        <label for="converted_to_codex">已转 Codex</label>
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>F · 订阅周期</legend>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>第一次套餐开始时间</label>
+        <input type="date" name="plan_start_date" value="{{ a.plan_start_date if a and a.plan_start_date else '' }}">
+      </div>
+      <div class="form-group">
+        <label>套餐到期日期</label>
+        <input type="date" name="plan_end_date" value="{{ a.plan_end_date if a and a.plan_end_date else '' }}">
+      </div>
+      <div class="checkbox-row">
+        <input type="checkbox" name="distributed" id="distributed" {% if a and a.distributed %}checked{% endif %}>
+        <label for="distributed">第一批账号是否已发放</label>
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>G · 第一批账号分配 <span style="color:var(--muted);font-size:11px">(原始多合一字段：邮箱/密码/套餐金额等)</span></legend>
+    <div class="form-group">
+      <textarea name="first_batch_alloc" rows="4" placeholder="CC邮箱 / 邮箱密码 / GPT密码 / 充值金额 等多合一信息">{{ a.first_batch_alloc if a else '' }}</textarea>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>H · 第 1/2/3 次封号记录 <span style="color:var(--muted);font-size:11px">(每次 = 一个多合一文本框，类似第一批账号分配)</span></legend>
+
+    {# 第 1 次：是否被封 + 被封时间 + 交付凭证图片 #}
+    <div style="margin-bottom:14px;padding:10px;background:var(--bg);border-radius:6px">
+      <div style="color:var(--warn);font-size:12px;margin-bottom:6px">第 1 次</div>
+      {{ voucher_zone('第一次交付凭证', a.id if a else 0, 'ban1_voucher', a.ban1_voucher if a else '') }}
+      <div class="form-grid">
+        <div class="checkbox-row">
+          <input type="checkbox" name="ban1_is_banned" id="ban1_is_banned" {% if a and a.ban1_is_banned %}checked{% endif %}>
+          <label for="ban1_is_banned">第一次是否被封</label>
+        </div>
+        <div class="form-group">
+          <label>第一次被封时间</label>
+          <input type="date" name="ban1_date" value="{{ a.ban1_date if a and a.ban1_date else '' }}">
+        </div>
+      </div>
+    </div>
+
+    {# 第 2 次：多合一文本框（账号交付 + 凭证） + 凭证图片 + 是否被封 + 时间 #}
+    <div style="margin-bottom:14px;padding:10px;background:var(--bg);border-radius:6px">
+      <div style="color:var(--warn);font-size:12px;margin-bottom:6px">第 2 次</div>
+      <div class="form-group" style="margin-bottom:10px">
+        <label>第二次账号交付 <span style="color:var(--muted);font-size:11px">(原始多合一字段：账号/凭证/截图链接等)</span></label>
+        <textarea name="ban2_delivered" rows="3" placeholder="第二次交付的账号、凭证截图、链接等多合一信息">{{ a.ban2_delivered if a else '' }}</textarea>
+        {% if a and a.ban2_delivered %}
+        <details style="margin-top:6px;background:var(--card);padding:6px 10px;border-radius:6px;border:1px solid var(--border)">
+          <summary style="cursor:pointer;color:var(--primary);font-family:var(--mono);word-break:break-all">
+            {{ a.ban2_delivered[:70] }}{% if a.ban2_delivered|length > 70 %}…{% endif %}
+          </summary>
+          <div class="mono" style="word-break:break-all;padding:8px;background:var(--bg);border-radius:4px;font-size:12px;margin-top:6px;white-space:pre-wrap">{{ a.ban2_delivered }}</div>
+          <button type="button" class="btn btn-sm btn-primary" style="margin-top:6px"
+                  onclick="aamCopyB64('{{ a.ban2_delivered | b64encode }}', this)">📋 复制完整内容</button>
+        </details>
+        {% endif %}
+      </div>
+      {{ voucher_zone('第二次交付凭证', a.id if a else 0, 'second_voucher', a.second_voucher if a else '') }}
+      <div class="form-grid">
+        <div class="checkbox-row">
+          <input type="checkbox" name="ban2_is_banned" id="ban2_is_banned" {% if a and a.ban2_is_banned %}checked{% endif %}>
+          <label for="ban2_is_banned">第二次是否被封</label>
+        </div>
+        <div class="form-group">
+          <label>第二次被封时间</label>
+          <input type="date" name="ban2_date" value="{{ a.ban2_date if a and a.ban2_date else '' }}">
+        </div>
+      </div>
+    </div>
+
+    {# 第 3 次：多合一文本框 + 凭证图片 + 是否被封 #}
+    <div style="padding:10px;background:var(--bg);border-radius:6px">
+      <div style="color:var(--warn);font-size:12px;margin-bottom:6px">第 3 次</div>
+      <div class="form-group" style="margin-bottom:10px">
+        <label>第三次账号交付 <span style="color:var(--muted);font-size:11px">(原始多合一字段：账号/凭证/截图链接等)</span></label>
+        <textarea name="ban3_delivered" rows="3" placeholder="第三次交付的账号、凭证截图、链接等多合一信息">{{ a.ban3_delivered if a else '' }}</textarea>
+        {% if a and a.ban3_delivered %}
+        <details style="margin-top:6px;background:var(--card);padding:6px 10px;border-radius:6px;border:1px solid var(--border)">
+          <summary style="cursor:pointer;color:var(--primary);font-family:var(--mono);word-break:break-all">
+            {{ a.ban3_delivered[:70] }}{% if a.ban3_delivered|length > 70 %}…{% endif %}
+          </summary>
+          <div class="mono" style="word-break:break-all;padding:8px;background:var(--bg);border-radius:4px;font-size:12px;margin-top:6px;white-space:pre-wrap">{{ a.ban3_delivered }}</div>
+          <button type="button" class="btn btn-sm btn-primary" style="margin-top:6px"
+                  onclick="aamCopyB64('{{ a.ban3_delivered | b64encode }}', this)">📋 复制完整内容</button>
+        </details>
+        {% endif %}
+      </div>
+      {{ voucher_zone('第三次交付凭证', a.id if a else 0, 'third_voucher', a.third_voucher if a else '') }}
+      <div class="checkbox-row">
+        <input type="checkbox" name="ban3_is_banned" id="ban3_is_banned" {% if a and a.ban3_is_banned %}checked{% endif %}>
+        <label for="ban3_is_banned">第三次是否被封</label>
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>I · 备注</legend>
+    <div class="form-group">
+      <textarea name="notes" rows="3" placeholder="备注/说明">{{ a.notes if a else '' }}</textarea>
+    </div>
+  </fieldset>
+
+  <div style="display:flex;gap:10px;margin-top:20px">
+    <button type="submit" class="btn btn-primary">💾 保存</button>
+    <a href="{% if a %}/accounts/{{ a.id }}{% else %}/{% endif %}" class="btn">取消</a>
+  </div>
+</form>
+
+{% if a %}
+<script>
+// 绑定三个凭证粘贴区
+aamBindPaste('zone-ban1_voucher', {{ a.id }}, 'ban1_voucher');
+aamBindPaste('zone-second_voucher', {{ a.id }}, 'second_voucher');
+aamBindPaste('zone-third_voucher', {{ a.id }}, 'third_voucher');
+</script>
+{% endif %}
+{% endblock %}

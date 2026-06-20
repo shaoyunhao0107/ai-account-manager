@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}回收站 · AI 账号管理{% endblock %}
+{% block content %}
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+  <h2 style="margin:0">🗑️ 回收站 <span style="color:var(--muted);font-size:14px">({{ rows|length }} 条已删除账号)</span></h2>
+  {% if rows %}
+  <form method="post" action="/trash/purge-all"
+        onsubmit="return confirm('⚠️ 清空回收站后不可恢复！确定要彻底删除全部 {{ rows|length }} 条记录吗？')">
+    <button type="submit" class="btn btn-danger">清空回收站</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if not rows %}
+<div class="detail-section" style="text-align:center;color:var(--muted);padding:40px">
+  回收站是空的
+</div>
+{% else %}
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>用户</th>
+      <th>部门</th>
+      <th>选型</th>
+      <th>CC邮箱</th>
+      <th>订单号</th>
+      <th>删除日期</th>
+      <th>操作</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for a in rows %}
+    <tr>
+      <td>{{ a.id }}</td>
+      <td>{{ a.user_name }}</td>
+      <td>{{ a.department }}</td>
+      <td>{{ a.plan_type }}</td>
+      <td>{{ a.cc_email }}</td>
+      <td class="mono">{{ a.server_order }}</td>
+      <td>{{ a.deleted_at }}</td>
+      <td>
+        <form method="post" action="/trash/{{ a.id }}/restore" style="display:inline">
+          <button type="submit" class="btn btn-sm btn-primary">↩️ 恢复</button>
+        </form>
+        <form method="post" action="/trash/{{ a.id }}/purge" style="display:inline"
+              onsubmit="return confirm('彻底删除 {{ a.user_name }} (ID={{ a.id }})？此操作不可恢复！')">
+          <button type="submit" class="btn btn-sm btn-danger">❌ 彻底删除</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<p style="margin-top:20px">
+  <a href="/" class="btn">← 返回列表</a>
+</p>
+{% endblock %}

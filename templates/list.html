@@ -1,0 +1,354 @@
+{% extends "base.html" %}
+{% block title %}账号列表 · AI 账号管理{% endblock %}
+{% block content %}
+
+<form class="filters" method="get" action="/">
+  <input type="text" name="q" value="{{ q }}" placeholder="搜索 用户/邮箱/订单号/IP/verge/vless节点地址">
+  <select name="department">
+    <option value="">全部部门</option>
+    {% for d in departments %}
+    <option value="{{ d }}" {% if d == department %}selected{% endif %}>{{ d }}</option>
+    {% endfor %}
+  </select>
+  <select name="plan_type">
+    <option value="">全部选型</option>
+    {% for p in plan_types %}
+    <option value="{{ p }}" {% if p == plan_type %}selected{% endif %}>{{ p }}</option>
+    {% endfor %}
+  </select>
+  <select name="status">
+    <option value="">全部状态</option>
+    {% for s in statuses %}
+    <option value="{{ s }}" {% if s == status_filter %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn btn-primary">筛选</button>
+  <a href="/" class="btn">重置</a>
+  <span style="color:var(--muted)">共 {{ total }} 条 {% if total_pages > 1 %}· 第 {{ page }}/{{ total_pages }} 页 · 每页 {{ page_size }} 条{% endif %}</span>
+  <span style="margin-left:auto">
+    <button type="button" class="btn btn-sm" onclick="toggleColPanel()">⚙️ 列显示</button>
+  </span>
+</form>
+
+{# 列显示/隐藏面板 #}
+<div id="col-panel" style="display:none;background:var(--card);border:1px solid var(--border);padding:12px 14px;border-radius:8px;margin-bottom:12px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <b style="font-size:13px">选择要显示的列</b>
+    <div>
+      <button type="button" class="btn btn-sm" onclick="setAllCols(true)">全选</button>
+      <button type="button" class="btn btn-sm" onclick="setAllCols(false)">全不选</button>
+      <button type="button" class="btn btn-sm" onclick="toggleColPanel()">收起</button>
+    </div>
+  </div>
+  <div id="col-toggles" style="display:flex;flex-wrap:wrap;gap:8px 16px;font-size:12px">
+    {# 由 JS 动态生成复选框 #}
+  </div>
+  <p style="margin:8px 0 0;color:var(--muted);font-size:11px">选择会自动记忆（保存在浏览器本地）</p>
+</div>
+
+{# 可排序表头宏：点击切换 asc/desc，带 ↑↓ 箭头
+   col_key 用于列显示/隐藏（与 td 的 data-col 一致）
+   sort_field 用于后端排序（真实字段名） #}
+{% macro sortable_th(col_key, sort_field, label) %}
+<th data-col="{{ col_key }}" style="cursor:pointer;user-select:none;white-space:nowrap"
+    onclick="sortBy('{{ sort_field }}')">
+  {{ label }}
+  {% if sort == sort_field %}
+    {% if order == 'asc' %} <span style="color:var(--primary)">↑</span>
+    {% else %} <span style="color:var(--primary)">↓</span>{% endif %}
+  {% else %}
+    <span style="color:var(--muted);font-size:10px">⇅</span>
+  {% endif %}
+</th>
+{% endmacro %}
+
+<form method="post" action="/bulk-delete" id="bulk-form"
+      onsubmit="return confirm('将选中的 ' + document.querySelectorAll('.row-check:checked').length + ' 个账号移入回收站？可从回收站恢复。')">
+  <div class="bulk-bar" id="bulk-bar" style="background:var(--card);border:1px solid var(--border);padding:10px 14px;border-radius:8px;margin-bottom:12px;align-items:center;gap:14px;flex-wrap:wrap">
+    <span id="bulk-count" style="color:var(--primary);font-weight:600">已选 0 项</span>
+    <button type="submit" class="btn btn-danger btn-sm">🗑️ 批量移入回收站</button>
+    <button type="button" class="btn btn-sm" onclick="clearAllChecks()">取消选择</button>
+  </div>
+
+  <table id="accounts-table">
+    <thead>
+      <tr>
+        <th data-col="check" style="width:30px"><input type="checkbox" id="check-all" onclick="toggleAll(this)"></th>
+        {{ sortable_th('id', 'id', 'ID') }}
+        {{ sortable_th('user', 'user_name', '用户') }}
+        {{ sortable_th('dept', 'department', '部门') }}
+        {{ sortable_th('plan', 'plan_type', '选型') }}
+        {{ sortable_th('status', 'status', '状态') }}
+        <th data-col="ip">VPS IP(脱敏)</th>
+        <th data-col="order">订单号</th>
+        <th data-col="email">CC邮箱</th>
+        <th data-col="amount">套餐</th>
+        <th data-col="date">开号日期</th>
+        <th data-col="pwd">密码</th>
+        <th data-col="actions">操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in rows %}
+      <tr>
+        <td data-col="check"><input type="checkbox" name="ids" value="{{ a.id }}" class="row-check" onclick="updateBulkBar()"></td>
+        <td data-col="id">{{ a.id }}</td>
+        <td data-col="user">{{ a.user_name }}</td>
+        <td data-col="dept">{{ a.department }}</td>
+        <td data-col="plan">{{ a.plan_type }}</td>
+        <td data-col="status">
+          {% if a.status == "可用" %}<span class="tag tag-ok">可用</span>
+          {% elif a.status == "被封" %}<span class="tag tag-ban">被封</span>
+          {% elif a.status == "待交付" %}<span class="tag tag-wait">待交付</span>
+          {% else %}<span class="tag tag-off">{{ a.status }}</span>{% endif %}
+        </td>
+        <td data-col="ip" class="mono">
+          <div style="display:flex;align-items:center;gap:4px">
+            <span>{{ a.vps_ip_masked }}</span>
+            {% if a.vps_ip_masked %}
+            <button type="button" class="btn btn-sm" style="padding:1px 6px;font-size:11px;cursor:pointer"
+                    onclick="aamCopyB64('{{ a.vps_ip_masked | b64encode }}', this)" title="复制">📋</button>
+            {% endif %}
+          </div>
+        </td>
+        <td data-col="order" class="mono">
+          <div style="display:flex;align-items:center;gap:4px">
+            <span>{{ a.server_order }}</span>
+            {% if a.server_order %}
+            <button type="button" class="btn btn-sm" style="padding:1px 6px;font-size:11px;cursor:pointer"
+                    onclick="aamCopyB64('{{ a.server_order | b64encode }}', this)" title="复制">📋</button>
+            {% endif %}
+          </div>
+        </td>
+        <td data-col="email">
+          <div style="display:flex;align-items:center;gap:4px">
+            <span>{{ a.cc_email }}</span>
+            {% if a.cc_email %}
+            <button type="button" class="btn btn-sm" style="padding:1px 6px;font-size:11px;cursor:pointer"
+                    onclick="aamCopyB64('{{ a.cc_email | b64encode }}', this)" title="复制">📋</button>
+            {% endif %}
+          </div>
+        </td>
+        <td data-col="amount">{{ a.plan_amount }}</td>
+        <td data-col="date">{{ a.first_open_date or "" }}</td>
+        <td data-col="pwd">
+          {% if a.email_password_enc %}📧{% endif %}
+          {% if a.gpt_password_enc %}🔑{% endif %}
+        </td>
+        <td data-col="actions">
+          <a href="/accounts/{{ a.id }}" class="btn btn-sm">详情</a>
+          <a href="/accounts/{{ a.id }}/edit" class="btn btn-sm">编辑</a>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not rows %}
+      <tr><td colspan="13" style="text-align:center;color:var(--muted);padding:40px">暂无数据 — 点右上角"新增账号"开始</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</form>
+
+{# ============ 分页导航 ============ #}
+{% if total_pages > 1 %}
+<div class="pagination" style="display:flex;align-items:center;justify-content:center;gap:4px;padding:16px 0;flex-wrap:wrap">
+  {# 上一页 #}
+  {% if has_prev %}
+    <a href="javascript:goPage({{ prev_page }})" class="btn btn-sm">‹ 上一页</a>
+  {% else %}
+    <span class="btn btn-sm" style="opacity:0.4;cursor:not-allowed">‹ 上一页</span>
+  {% endif %}
+
+  {# 第一页 + 省略号 #}
+  {% if 1 not in page_numbers %}
+    <a href="javascript:goPage(1)" class="btn btn-sm">1</a>
+    {% if page_numbers[0] > 2 %}<span style="color:var(--muted)">…</span>{% endif %}
+  {% endif %}
+
+  {# 页码 #}
+  {% for p in page_numbers %}
+    {% if p == page %}
+      <span class="btn btn-sm btn-primary" style="cursor:default">{{ p }}</span>
+    {% else %}
+      <a href="javascript:goPage({{ p }})" class="btn btn-sm">{{ p }}</a>
+    {% endif %}
+  {% endfor %}
+
+  {# 最后一页 + 省略号 #}
+  {% if total_pages not in page_numbers %}
+    {% if page_numbers[-1] < total_pages - 1 %}<span style="color:var(--muted)">…</span>{% endif %}
+    <a href="javascript:goPage({{ total_pages }})" class="btn btn-sm">{{ total_pages }}</a>
+  {% endif %}
+
+  {# 下一页 #}
+  {% if has_next %}
+    <a href="javascript:goPage({{ next_page }})" class="btn btn-sm">下一页 ›</a>
+  {% else %}
+    <span class="btn btn-sm" style="opacity:0.4;cursor:not-allowed">下一页 ›</span>
+  {% endif %}
+
+  {# 跳页 #}
+  <span style="margin-left:12px;color:var(--muted);font-size:12px">
+    跳到
+    <input type="number" min="1" max="{{ total_pages }}" value="{{ page }}" style="width:50px;padding:2px 4px;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:4px"
+           onchange="goPage(this.value)">
+    页
+  </span>
+
+  {# 每页条数 #}
+  <span style="margin-left:12px;color:var(--muted);font-size:12px">
+    每页
+    <select onchange="changePageSize(this.value)" style="padding:2px 4px;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:4px">
+      <option value="20" {% if page_size == 20 %}selected{% endif %}>20</option>
+      <option value="50" {% if page_size == 50 %}selected{% endif %}>50</option>
+      <option value="100" {% if page_size == 100 %}selected{% endif %}>100</option>
+      <option value="200" {% if page_size == 200 %}selected{% endif %}>200</option>
+    </select> 条
+  </span>
+</div>
+
+<script>
+// 构建带当前筛选参数的分页 URL（保留 q/department/plan_type/status）
+function goPage(page) {
+  var params = new URLSearchParams(location.search);
+  params.set('page', page);
+  location.href = location.pathname + '?' + params.toString();
+}
+function changePageSize(size) {
+  var params = new URLSearchParams(location.search);
+  params.set('page_size', size);
+  params.set('page', '1');
+  location.href = location.pathname + '?' + params.toString();
+}
+// 点击表头排序：同字段切换 asc/desc，新字段默认 desc
+function sortBy(field) {
+  var params = new URLSearchParams(location.search);
+  var curSort = params.get('sort') || 'id';
+  var curOrder = params.get('order') || 'desc';
+  if (curSort === field) {
+    // 同字段：翻转方向
+    params.set('order', curOrder === 'asc' ? 'desc' : 'asc');
+  } else {
+    // 新字段：默认降序
+    params.set('sort', field);
+    params.set('order', 'desc');
+  }
+  params.set('page', '1');  // 排序后回到第 1 页
+  location.href = location.pathname + '?' + params.toString();
+}
+</script>
+{% endif %}
+
+<script>
+// ============ 列定义（data-col 名 → 中文标签） ============
+// 始终显示的列：check / actions（不能隐藏）
+var COL_DEFS = [
+  {key: 'id',      label: 'ID'},
+  {key: 'user',    label: '用户'},
+  {key: 'dept',    label: '部门'},
+  {key: 'plan',    label: '选型'},
+  {key: 'status',  label: '状态'},
+  {key: 'ip',      label: 'VPS IP'},
+  {key: 'order',   label: '订单号'},
+  {key: 'email',   label: 'CC邮箱'},
+  {key: 'amount',  label: '套餐'},
+  {key: 'date',    label: '开号日期'},
+  {key: 'pwd',     label: '密码标记'}
+];
+var STORAGE_KEY = 'aam_visible_cols';
+
+// 读取已保存的可见列
+function getVisibleCols() {
+  var saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) {
+    try { return JSON.parse(saved); } catch (e) {}
+  }
+  // 默认全部可见
+  return COL_DEFS.map(function(c) { return c.key; });
+}
+
+function saveVisibleCols(arr) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
+}
+
+// 应用列显示/隐藏
+function applyCols() {
+  var visible = getVisibleCols();
+  var table = document.getElementById('accounts-table');
+  if (!table) return;
+  // 对每一列 data-col，决定显示/隐藏
+  COL_DEFS.forEach(function(c) {
+    var show = visible.indexOf(c.key) !== -1;
+    var cells = table.querySelectorAll('[data-col="' + c.key + '"]');
+    cells.forEach(function(cell) {
+      cell.style.display = show ? '' : 'none';
+    });
+  });
+}
+
+// 生成列选择面板的复选框
+function buildColToggles() {
+  var container = document.getElementById('col-toggles');
+  if (!container) return;
+  var visible = getVisibleCols();
+  var html = '';
+  COL_DEFS.forEach(function(c) {
+    var checked = visible.indexOf(c.key) !== -1 ? 'checked' : '';
+    html += '<label style="display:flex;align-items:center;gap:4px;cursor:pointer">'
+         +  '<input type="checkbox" value="' + c.key + '" ' + checked + ' onchange="onColToggle()">'
+         +  c.label + '</label>';
+  });
+  container.innerHTML = html;
+}
+
+function onColToggle() {
+  var checked = [];
+  document.querySelectorAll('#col-toggles input[type=checkbox]').forEach(function(cb) {
+    if (cb.checked) checked.push(cb.value);
+  });
+  saveVisibleCols(checked);
+  applyCols();
+}
+
+function setAllCols(on) {
+  document.querySelectorAll('#col-toggles input[type=checkbox]').forEach(function(cb) { cb.checked = on; });
+  onColToggle();
+}
+
+function toggleColPanel() {
+  var p = document.getElementById('col-panel');
+  p.style.display = (p.style.display === 'none' ? 'block' : 'none');
+}
+
+// ============ 批量选择（原有） ============
+function toggleAll(master) {
+  document.querySelectorAll('.row-check').forEach(function(cb) { cb.checked = master.checked; });
+  updateBulkBar();
+}
+function clearAllChecks() {
+  document.querySelectorAll('.row-check').forEach(function(cb) { cb.checked = false; });
+  var master = document.getElementById('check-all');
+  if (master) master.checked = false;
+  updateBulkBar();
+}
+function updateBulkBar() {
+  var checked = document.querySelectorAll('.row-check:checked');
+  var bar = document.getElementById('bulk-bar');
+  var count = document.getElementById('bulk-count');
+  if (checked.length > 0) {
+    bar.classList.add('show');
+    count.textContent = '已选 ' + checked.length + ' 项';
+  } else {
+    bar.classList.remove('show');
+  }
+  var allBoxes = document.querySelectorAll('.row-check');
+  var master = document.getElementById('check-all');
+  if (master && allBoxes.length > 0) {
+    master.checked = (checked.length === allBoxes.length);
+  }
+}
+
+// ============ 初始化 ============
+buildColToggles();
+applyCols();
+</script>
+{% endblock %}

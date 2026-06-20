@@ -1,0 +1,286 @@
+{% extends "base.html" %}
+{% block title %}{{ a.user_name }} · AI 账号管理{% endblock %}
+
+{# ===== 通用"显示+复制"宏 ===== #}
+{# 用法：                                                      #}
+{#   {{ copyable('CC 邮箱', a.cc_email) }}                      #}
+{#   {{ copyable('verge 地址', a.verge_url, long=true) }}       #}
+{# long=true  → 长内容用 details/summary 折叠显示              #}
+{# long=false → 短内容，显示完整文本 + 一个紧凑复制按钮         #}
+{% macro copyable(label, value, long=false) %}
+<div class="dl-item" style="margin-bottom:10px">
+  <span class="k">{{ label }}</span>
+  {% if value %}
+    {% set b64 = value | b64encode %}
+    {% if long %}
+      {# 长内容：details/summary 折叠 + 展开后有复制按钮 #}
+      <details style="margin-top:4px;background:var(--bg);padding:8px 10px;border-radius:6px;border:1px solid var(--border)">
+        <summary style="cursor:pointer;color:var(--primary);font-family:var(--mono);word-break:break-all">
+          {{ value[:70] }}{% if value|length > 70 %}…{% endif %}
+        </summary>
+        <div style="margin-top:8px">
+          <div class="mono" style="word-break:break-all;padding:8px;background:var(--card);border-radius:4px;font-size:12px;color:var(--text)">{{ value }}</div>
+          <button type="button" class="btn btn-sm btn-primary" style="margin-top:6px"
+                  onclick="aamCopyB64('{{ b64 }}', this)">📋 复制完整内容</button>
+        </div>
+      </details>
+    {% else %}
+      {# 短内容：显示完整 + 紧凑复制按钮 #}
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px">
+        <span class="v mono" style="word-break:break-all">{{ value }}</span>
+        <button type="button" class="btn btn-sm" style="padding:2px 8px;flex-shrink:0"
+                onclick="aamCopyB64('{{ b64 }}', this)" title="复制">📋</button>
+      </div>
+    {% endif %}
+  {% else %}
+    <span class="v">—</span>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% block content %}
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+  <h2 style="margin:0">
+    #{{ a.id }} — {{ a.user_name }}
+    {% if a.status == "可用" %}<span class="tag tag-ok">可用</span>
+    {% elif a.status == "被封" %}<span class="tag tag-ban">被封</span>
+    {% elif a.status == "待交付" %}<span class="tag tag-wait">待交付</span>
+    {% else %}<span class="tag tag-off">{{ a.status }}</span>{% endif %}
+  </h2>
+  <div>
+    <a href="/accounts/{{ a.id }}/edit" class="btn btn-primary">编辑</a>
+    <form method="post" action="/accounts/{{ a.id }}/delete" style="display:inline"
+          onsubmit="return confirm('将账号 #{{ a.id }} {{ a.user_name }} 移入回收站？可从回收站恢复。')">
+      <button type="submit" class="btn btn-danger">删除</button>
+    </form>
+  </div>
+</div>
+
+<div class="detail-section">
+  <h3>📋 基础 / 交付</h3>
+  <div class="dl-grid">
+    {{ copyable('用户', a.user_name) }}
+    {{ copyable('部门', a.department) }}
+    {{ copyable('账号选型', a.plan_type) }}
+    <div class="dl-item"><span class="k">首次开号日期</span><span class="v">{{ a.first_open_date or "—" }}</span></div>
+    <div class="dl-item"><span class="k">是否交付</span><span class="v">{{ "✅ 是" if a.delivered else "❌ 否" }}</span></div>
+    <div class="dl-item"><span class="k">交付日期</span><span class="v">{{ a.delivery_date or "—" }}</span></div>
+    <div class="dl-item"><span class="k">是否安装</span><span class="v">{{ "✅ 是" if a.installed else "❌ 否" }}</span></div>
+    {{ copyable('安装人', a.installer) }}
+    {{ copyable('电脑系统', a.os_version) }}
+  </div>
+</div>
+
+<div class="detail-section">
+  <h3>🖥️ 服务器 / VPS</h3>
+  <div class="dl-grid">
+    {{ copyable('服务器订单号', a.server_order) }}
+    {{ copyable('VPS IP (脱敏)', a.vps_ip_masked) }}
+    <div class="dl-item"><span class="k">VPS 是否纯净</span><span class="v">{{ "✅" if a.vps_pure else "❌" }}</span></div>
+    <div class="dl-item"><span class="k">VPS 是否使用中</span><span class="v">{{ "✅" if a.vps_in_use else "❌" }}</span></div>
+    {{ copyable('新 VPS 地址', a.new_vps_address, long=true) }}
+  </div>
+</div>
+
+<div class="detail-section">
+  <h3>🌐 节点配置</h3>
+  {{ copyable('verge 地址 (clash / 小猫咪)', a.verge_url, long=true) }}
+  {{ copyable('vless / vlmess 地址 (小火箭)', a.vlmess_url, long=true) }}
+</div>
+
+<div class="detail-section">
+  <h3>🔑 账号凭证</h3>
+  <div class="dl-grid">
+    {{ copyable('CC 邮箱', a.cc_email) }}
+
+    {# 邮箱密码：加密存储，需 reveal 才显示，显示后可复制 #}
+    <div class="dl-item" style="margin-bottom:10px">
+      <span class="k">邮箱密码</span>
+      {% if a.email_password_enc %}
+        {% if email_pwd_plain %}
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px">
+            <div class="secret-box">
+              <span>{{ email_pwd_plain }}</span>
+            </div>
+            <button type="button" class="btn btn-sm btn-primary" style="padding:2px 8px"
+                    onclick="aamCopyB64('{{ email_pwd_plain | b64encode }}', this)" title="复制">📋</button>
+            <a href="/accounts/{{ a.id }}" class="btn btn-sm">隐藏</a>
+          </div>
+        {% else %}
+          <div style="display:flex;align-items:center;gap:6px;margin-top:2px">
+            <span class="v">🔒 已加密保存</span>
+            <a href="/accounts/{{ a.id }}?reveal=email_pwd" class="btn btn-sm">显示明文</a>
+          </div>
+        {% endif %}
+      {% else %}<span class="v">—</span>{% endif %}
+    </div>
+
+    {# GPT 密码：同上 #}
+    <div class="dl-item" style="margin-bottom:10px">
+      <span class="k">GPT 密码</span>
+      {% if a.gpt_password_enc %}
+        {% if gpt_pwd_plain %}
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px">
+            <div class="secret-box">
+              <span>{{ gpt_pwd_plain }}</span>
+            </div>
+            <button type="button" class="btn btn-sm btn-primary" style="padding:2px 8px"
+                    onclick="aamCopyB64('{{ gpt_pwd_plain | b64encode }}', this)" title="复制">📋</button>
+            <a href="/accounts/{{ a.id }}" class="btn btn-sm">隐藏</a>
+          </div>
+        {% else %}
+          <div style="display:flex;align-items:center;gap:6px;margin-top:2px">
+            <span class="v">🔒 已加密保存</span>
+            <a href="/accounts/{{ a.id }}?reveal=gpt_pwd" class="btn btn-sm">显示明文</a>
+          </div>
+        {% endif %}
+      {% else %}<span class="v">—</span>{% endif %}
+    </div>
+
+    {{ copyable('套餐金额', a.plan_amount) }}
+    <div class="dl-item"><span class="k">是否转 Codex</span><span class="v">{{ "✅ 是" if a.converted_to_codex else "❌ 否" }}</span></div>
+  </div>
+</div>
+
+<div class="detail-section">
+  <h3>📅 订阅周期</h3>
+  <div class="dl-grid">
+    <div class="dl-item"><span class="k">当前套餐开始</span><span class="v">{{ a.plan_start_date or "—" }}</span></div>
+    <div class="dl-item"><span class="k">当前套餐到期</span><span class="v">{{ a.plan_end_date or "—" }}</span></div>
+    <div class="dl-item"><span class="k">是否已发放</span><span class="v">{{ "✅ 是" if a.distributed else "❌ 否" }}</span></div>
+  </div>
+</div>
+
+{% if a.first_batch_alloc %}
+<div class="detail-section">
+  <h3>📦 第一批账号分配</h3>
+  {{ copyable('', a.first_batch_alloc, long=true) }}
+</div>
+{% endif %}
+
+<div class="detail-section">
+  <h3>🔁 第 1/2/3 次封号记录</h3>
+  <table>
+    <thead>
+      <tr><th>次数</th><th>账号交付</th><th>交付凭证</th><th>是否被封</th><th>被封时间</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>第 1 次</td>
+        <td>—（初次开号）</td>
+        <td>
+          {% if a.ban1_voucher %}
+          <img src="{{ a.ban1_voucher }}" alt="第一次凭证" style="max-width:120px;max-height:80px;cursor:zoom-in;border:1px solid var(--border);border-radius:4px"
+               onclick="aamOpenLightbox('{{ a.ban1_voucher }}', '第一次交付凭证')">
+          {% else %}—{% endif %}
+        </td>
+        <td>{{ "✅ 被封" if a.ban1_is_banned else "❌ 未封" }}</td>
+        <td>{{ a.ban1_date or "—" }}</td>
+      </tr>
+      <tr>
+        <td>第 2 次</td>
+        <td class="mono" style="white-space:pre-wrap">{{ a.ban2_delivered or "—" }}</td>
+        <td>
+          {% if a.second_voucher %}
+          <img src="{{ a.second_voucher }}" alt="第二次凭证" style="max-width:120px;max-height:80px;cursor:zoom-in;border:1px solid var(--border);border-radius:4px"
+               onclick="aamOpenLightbox('{{ a.second_voucher }}', '第二次交付凭证')">
+          {% else %}—{% endif %}
+        </td>
+        <td>{{ "✅ 被封" if a.ban2_is_banned else "❌ 未封" }}</td>
+        <td>{{ a.ban2_date or "—" }}</td>
+      </tr>
+      <tr>
+        <td>第 3 次</td>
+        <td class="mono" style="white-space:pre-wrap">{{ a.ban3_delivered or "—" }}</td>
+        <td>
+          {% if a.third_voucher %}
+          <img src="{{ a.third_voucher }}" alt="第三次凭证" style="max-width:120px;max-height:80px;cursor:zoom-in;border:1px solid var(--border);border-radius:4px"
+               onclick="aamOpenLightbox('{{ a.third_voucher }}', '第三次交付凭证')">
+          {% else %}—{% endif %}
+        </td>
+        <td>{{ "✅ 被封" if a.ban3_is_banned else "❌ 未封" }}</td>
+        <td>—</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+{% if a.notes %}
+<div class="detail-section">
+  <h3>📝 备注</h3>
+  <div class="dl-item">
+    <span class="v" style="white-space: pre-wrap">{{ a.notes }}</span>
+  </div>
+</div>
+{% endif %}
+
+<div class="detail-section">
+  <h3>🚫 封号 / 补号历史（{{ bans|length }} 次）</h3>
+
+  {% if bans %}
+  <table style="margin-bottom:16px">
+    <thead>
+      <tr><th>第几次</th><th>封号日期</th><th>封号原因</th><th>补号日期</th><th>补号凭证</th><th>补号后状态</th><th>操作</th></tr>
+    </thead>
+    <tbody>
+      {% for b in bans %}
+      <tr id="ban-{{ b.id }}">
+        <td>{{ b.ban_sequence }}</td>
+        <td>{{ b.ban_date or "—" }}</td>
+        <td>{{ b.ban_reason or "—" }}</td>
+        <td>{{ b.replacement_date or "—" }}</td>
+        <td class="mono">{{ b.replacement_voucher or "—" }}</td>
+        <td>{{ b.status_after or "—" }}</td>
+        <td>
+          <form method="post" action="/ban/{{ b.id }}/delete" style="display:inline"
+                onsubmit="return confirm('删除第 {{ b.ban_sequence }} 次封号记录？')">
+            <button type="submit" class="btn btn-sm btn-danger">删除</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:var(--muted);margin:8px 0 16px">无封号记录</p>
+  {% endif %}
+
+  <details>
+    <summary class="btn" style="cursor:pointer">+ 添加封号 / 补号记录</summary>
+    <form method="post" action="/accounts/{{ a.id }}/ban" style="margin-top:14px">
+      <input type="hidden" name="ban_sequence" value="{{ next_ban_seq }}">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>封号日期</label>
+          <input type="date" name="ban_date">
+        </div>
+        <div class="form-group">
+          <label>封号原因</label>
+          <input type="text" name="ban_reason" placeholder="如：风控 / 异常登录">
+        </div>
+        <div class="form-group">
+          <label>补号日期</label>
+          <input type="date" name="replacement_date">
+        </div>
+        <div class="form-group">
+          <label>补号凭证 (截图路径 / 链接)</label>
+          <input type="text" name="replacement_voucher">
+        </div>
+        <div class="form-group">
+          <label>补号后状态</label>
+          <select name="status_after">
+            <option value="">— 不修改 —</option>
+            <option value="可用">可用</option>
+            <option value="被封">仍被封</option>
+            <option value="待交付">待交付</option>
+            <option value="已停用">已停用</option>
+          </select>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary" style="margin-top:10px">添加记录</button>
+    </form>
+  </details>
+</div>
+
+{% endblock %}

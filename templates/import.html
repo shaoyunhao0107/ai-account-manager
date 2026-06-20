@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}导入 CSV · AI 账号管理{% endblock %}
+{% block content %}
+
+<h2 style="margin-top:0">📥 导入 CSV</h2>
+
+<div class="detail-section">
+  <h3>使用说明</h3>
+  <ul style="margin:8px 0; line-height:1.9; color:var(--muted)">
+    <li>CSV 第一行为表头，<b>支持中文字段名</b>（如 <code>用户、部门、CC邮箱、邮箱密码、VPS的IP</code> 等），系统会自动识别</li>
+    <li>编码支持 <b>UTF-8 (含/不含 BOM)</b> 和 <b>GBK</b>（Excel "另存为 CSV" 默认就是 GBK）</li>
+    <li><b>追加模式</b>：在现有数据后增加；<b>替换模式</b>：先清空所有账号和封号历史，再导入（危险，慎用）</li>
+    <li>必填：<code>用户姓名</code>（或 <code>用户</code>、<code>姓名</code>）。其他字段缺省时取默认值</li>
+    <li>日期格式支持：<code>2025-05-31</code> / <code>2025/5/31</code> / <code>5月31日</code></li>
+    <li>布尔字段识别为"真"的值：<code>是 / yes / true / 1 / 已交付 / 已安装 / ✓</code></li>
+    <li>导入后密码会自动加密入库</li>
+  </ul>
+  <p>
+    <a href="/static/template.csv" download class="btn btn-sm">⬇ 下载 CSV 模板</a>
+    <a href="/export" class="btn btn-sm">先导出当前数据看看格式</a>
+  </p>
+</div>
+
+{% if result %}
+<div class="detail-section" style="{% if result.ok %}border-color:var(--success){% else %}border-color:var(--danger){% endif %}">
+  <h3 style="{% if result.ok %}color:var(--success){% else %}color:var(--danger){% endif %}">
+    {% if result.ok %}✅ {% else %}❌ {% endif %}{{ result.msg }}
+  </h3>
+  {% if result.errors %}
+  <details style="margin-top:10px">
+    <summary style="cursor:pointer;color:var(--warn)">查看错误明细（最多 20 条）</summary>
+    <ul style="margin-top:8px; color:var(--danger); font-family:var(--mono); font-size:12px">
+      {% for e in result.errors %}
+      <li>{{ e }}</li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+  <p style="margin-top:12px"><a href="/" class="btn btn-primary">查看列表</a></p>
+</div>
+{% endif %}
+
+<div class="detail-section">
+  <h3>上传 CSV 文件</h3>
+  <form method="post" action="/import" enctype="multipart/form-data">
+    <div class="form-group" style="margin-bottom:12px">
+      <label>选择 CSV 文件</label>
+      <input type="file" name="file" accept=".csv,text/csv" required
+             style="padding:8px; background:var(--bg); border:1px solid var(--border); border-radius:6px">
+    </div>
+    <div class="form-group" style="margin-bottom:14px">
+      <label>导入模式</label>
+      <select name="mode">
+        <option value="add">追加（保留现有数据，新增到末尾）</option>
+        <option value="replace">替换（⚠️ 先清空所有数据再导入）</option>
+      </select>
+    </div>
+    <button type="submit" class="btn btn-primary"
+            onclick="return confirm('确认导入？请仔细检查文件和模式选择。')">📤 开始导入</button>
+    <a href="/" class="btn">取消</a>
+  </form>
+</div>
+
+{% endblock %}

@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}AI 账号资产管理系统{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+{% if request.cookies.get("aam_session") %}
+<div class="header">
+  <h1><a href="/" style="color:inherit;text-decoration:none;">🤖 AI 账号资产管理</a></h1>
+  <div class="actions">
+    <a href="/" class="btn btn-sm">列表</a>
+    <a href="/categories" class="btn btn-sm">⚙️ 分类</a>
+    <a href="/accounts/new" class="btn btn-sm btn-primary">+ 新增账号</a>
+    <a href="/import" class="btn btn-sm">📥 导入 CSV</a>
+    <a href="/export" class="btn btn-sm">导出 Excel</a>
+    <a href="/trash" class="btn btn-sm">🗑️ 回收站</a>
+    <a href="/export?with_secrets=1" class="btn btn-sm" onclick="return confirm('导出将包含明文密码，请妥善保管。继续？')">导出(含明文)</a>
+    <form method="post" action="/logout" style="display:inline">
+      <button class="btn btn-sm" type="submit">登出</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<div class="container">
+  {% block content %}{% endblock %}
+</div>
+
+<script>
+// ============ 复制功能 ============
+// 一键复制：参数是 base64 编码的明文
+function aamCopyB64(b64, btn) {
+  var text;
+  try {
+    text = decodeURIComponent(escape(atob(b64)));
+  } catch (e) { text = b64; }
+  var done = function() {
+    var orig = btn.textContent;
+    btn.textContent = '✅ 已复制';
+    setTimeout(function() { btn.textContent = orig; }, 1500);
+  };
+  var fail = function() { prompt('复制失败，请手动选中下方文本复制：', text); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, function() {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.top = '-1000px';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); done(); } catch (e2) { fail(); }
+      document.body.removeChild(ta);
+    });
+  } else { fail(); }
+}
+
+// ============ 凭证图片：粘贴 + 上传 + 灯箱放大 ============
+
+// 上传凭证图片（文件或 base64 data URL），上传后刷新页面
+function aamUploadVoucher(aid, field, fileOrDataUrl) {
+  var fd, isFile = (fileOrDataUrl instanceof File) || (fileOrDataUrl instanceof Blob);
+  var url = '/upload/voucher/' + aid + '/' + field;
+  var headers = {};
+
+  if (isFile) {
+    fd = new FormData();
+    fd.append('file', fileOrDataUrl);
+  } else {
+    fd = JSON.stringify({ data: fileOrDataUrl });
+    headers['Content-Type'] = 'application/json';
+  }
+
+  fetch(url, { method: 'POST', body: fd, headers: headers, credentials: 'same-origin' })
+    .then(function(r) { return r.json(); })
+    .then(function(j) {
+      if (j.ok) {
+        alert('✅ 凭证上传成功');
+        location.reload();
+      } else { alert('上传失败：' + (j.detail || JSON.stringify(j))); }
+    })
+    .catch(function(e) { alert('上传错误：' + e.message); });
+}
+
+// 监听凭证区域的粘贴事件（Ctrl+V 截图）
+// 用 document 级监听 + "当前激活 zone" 机制，避免必须精确点击 zone
+var aamActiveZone = null;  // {aid, field} 或 null
+function aamBindPaste(zoneId, aid, field) {
+  var zone = document.getElementById(zoneId);
+  if (!zone) return;
+  zone.tabIndex = 0;
+  // 点击/聚焦 zone 时，标记为当前激活
+  zone.addEventListener('focus', function() { aamActiveZone = {aid: aid, field: field, zoneId: zoneId}; });
+  zone.addEventListener('click', function() { zone.focus(); aamActiveZone = {aid: aid, field: field, zoneId: zoneId}; });
+  zone.addEventListener('blur', function() {
+    // 延迟清空，避免点击 zone 内的按钮（如文件上传）时立刻丢失
+    setTimeout(function() {
+      if (aamActiveZone && aamActiveZone.zoneId === zoneId && document.activeElement !== zone) {
+        aamActiveZone = null;
+      }
+    }, 200);
+  });
+  // zone 自身的粘贴（保留兼容）
+  zone.addEventListener('paste', function(e) { aamHandlePaste(e, aid, field); });
+}
+
+// 处理粘贴：有图片就上传
+function aamHandlePaste(e, aid, field) {
+  var items = (e.clipboardData || window.clipboardData).items;
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].type && items[i].type.indexOf('image') === 0) {
+      var blob = items[i].getAsFile();
+      var reader = new FileReader();
+      reader.onload = function(ev) { aamUploadVoucher(aid, field, ev.target.result); };
+      reader.readAsDataURL(blob);
+      e.preventDefault();
+      return true;
+    }
+  }
+  return false;
+}
+
+// 拖拽图片上传
+function aamDropImage(e, aid, field) {
+  var files = e.dataTransfer.files;
+  if (!files || files.length === 0) return;
+  for (var i = 0; i < files.length; i++) {
+    if (files[i].type && files[i].type.indexOf('image') === 0) {
+      aamUploadVoucher(aid, field, files[i]);
+      return;
+    }
+  }
+  alert('请拖拽图片文件（PNG / JPG / GIF）');
+}
+
+// 按钮触发：尝试从剪贴板读图片（异步 Clipboard API）
+async function aamTriggerClipboard(aid, field) {
+  try {
+    var items = await navigator.clipboard.read();
+    for (var i = 0; i < items.length; i++) {
+      var types = items[i].types;
+      for (var j = 0; j < types.length; j++) {
+        if (types[j].indexOf('image') === 0) {
+          var blob = await items[i].getType(types[j]);
+          var reader = new FileReader();
+          reader.onload = function(ev) { aamUploadVoucher(aid, field, ev.target.result); };
+          reader.readAsDataURL(blob);
+          return;
+        }
+      }
+    }
+    alert('剪贴板里没有图片。\n请先用截图工具（Win+Shift+S / Alt+A）截图，再点此按钮。');
+  } catch (e) {
+    alert('无法读取剪贴板（浏览器限制）。\n请改用以下方式之一：\n\n1. 拖拽图片到此区域\n2. 点击"选择图片文件"按钮\n3. 截图后在此区域按 Ctrl+V');
+  }
+}
+
+// document 级粘贴监听：当用户按 Ctrl+V 时，如果有激活的 zone 就处理
+document.addEventListener('paste', function(e) {
+  if (!aamActiveZone) return;
+  // 如果当前焦点在 input/textarea 里，不拦截（避免影响文本输入）
+  var tag = (document.activeElement || {}).tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (aamHandlePaste(e, aamActiveZone.aid, aamActiveZone.field)) return;
+  // 不是图片时提示
+  var hasText = (e.clipboardData || window.clipboardData).getData('text');
+  if (!hasText) {
+    e.preventDefault();
+    alert('剪贴板里没有图片。\n请先用截图工具（Win+Shift+S / 微信截图 Alt+A / QQ截图 Ctrl+Alt+A）截图，然后回到这里按 Ctrl+V。');
+  }
+});
+
+// 点击图片放大（灯箱）
+function aamOpenLightbox(src, alt) {
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:zoom-out;padding:20px';
+  overlay.onclick = function() { document.body.removeChild(overlay); };
+  var img = document.createElement('img');
+  img.src = src;
+  img.alt = alt || '';
+  img.style.cssText = 'max-width:95%;max-height:95%;object-fit:contain;box-shadow:0 0 30px rgba(0,0,0,.5)';
+  overlay.appendChild(img);
+  // 按 ESC 关闭
+  overlay.setAttribute('tabindex', '0');
+  document.body.appendChild(overlay);
+  overlay.focus();
+  overlay.onkeydown = function(e) { if (e.key === 'Escape') document.body.removeChild(overlay); };
+}
+
+// 文件选择上传
+function aamPickVoucher(input, aid, field) {
+  if (input.files && input.files[0]) {
+    aamUploadVoucher(aid, field, input.files[0]);
+  }
+}
+
+// 删除凭证（清空字段）
+function aamClearVoucher(aid, field) {
+  if (!confirm('确定删除这张凭证图片？')) return;
+  fetch('/upload/voucher/' + aid + '/' + field + '/delete', { method: 'POST', credentials: 'same-origin' })
+    .then(function(r) { return r.json(); })
+    .then(function(j) { if (j.ok) location.reload(); else alert('删除失败'); })
+    .catch(function(e) { alert('错误：' + e.message); });
+}
+</script>
+</body>
+</html>

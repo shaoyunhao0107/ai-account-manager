@@ -1,0 +1,17 @@
+version: "3.8"
+
+services:
+  ai-account-manager:
+    build: .
+    container_name: ai-account-manager
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      # ⚠️ 正式使用前务必修改这三个密码！
+      - AAM_ADMIN_PASSWORD=admin123
+      - AAM_MASTER_PASSWORD=please-change-this-key
+      - AAM_SESSION_SECRET=local-dev-secret-xyz
+      # - AAM_DB_PATH=/app/data/accounts.db
