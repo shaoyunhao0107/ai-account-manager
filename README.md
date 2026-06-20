@@ -1,7 +1,13 @@
 # AI 账号资产管理系统
 
 > 单机/局域网使用的 AI 账号（Codex / Claude Code 等）资产管理系统。
-> SQLite 存储，FastAPI + Jinja2 Web 界面，密码加密，支持凭证图片、回收站、分类管理、CSV 导入导出。
+> FastAPI + Jinja2 Web 界面，密码加密，支持凭证图片、回收站、分类管理、CSV 导入导出、**账号到期提醒**。
+
+> **📌 当前分支：`feat/expiry-reminder`**
+> 本分支在稳定版基础上新增了 **账号到期提醒** 和 **智能到期日期** 功能。
+> - 拉取本分支代码：`git clone -b feat/expiry-reminder <repo-url>`
+> - 查看完整部署文档：[docs/UBUNTU_INSTALL.md](docs/UBUNTU_INSTALL.md)
+> - 主分支 `main` 不含到期提醒功能
 
 ## 功能特性
 
@@ -19,27 +25,36 @@
 - 🎛️ **列显示/隐藏**：自定义列表显示哪些列（localStorage 记忆）
 - 🔁 **节点配置**：verge / vless 地址显示 + 一键复制
 - 🔑 **简单鉴权**：单一管理员密码 + Session Cookie
+- ⏰ **账号到期提醒**（本分支新增）：列表页横幅 + 独立 `/expiry` 页面，按 3/7/15 天分组提醒
+- 📅 **智能到期日期**（本分支新增）：填了"开始日期"后自动按 +30 天计算"到期日期"
 
 ## 快速开始
 
 ### 方式 1：Docker Compose（推荐）
 
 ```bash
-# 1. 克隆仓库
-git clone https://github.com/shaoyunhao0107/ai-account-manager.git
+# 1. 克隆本分支代码（注意 -b 指定分支）
+git clone -b feat/expiry-reminder https://github.com/shaoyunhao0107/ai-account-manager.git
 cd ai-account-manager
 
-# 2. 一键启动
-docker-compose up -d
+# 2. 修改默认密码（重要！）
+#    编辑 docker-compose.yml，修改 AAM_ADMIN_PASSWORD / AAM_MASTER_PASSWORD /
+#    AAM_SESSION_SECRET / POSTGRES_PASSWORD 四个值
 
-# 3. 访问
+# 3. 一键启动（PostgreSQL + 应用）
+docker compose up -d --build
+
+# 4. 查看启动日志
+docker compose logs -f app
+
+# 5. 访问
 # http://localhost:8000
-# 默认密码：admin123
+# 用第 2 步设置的 AAM_ADMIN_PASSWORD 登录
 ```
 
 ### 方式 2：Ubuntu 原生安装
 
-详见 [docs/UBUNTU_INSTALL.md](docs/UBUNTU_INSTALL.md)
+详见 [docs/UBUNTU_INSTALL.md](docs/UBUNTU_INSTALL.md)（含从 main 升级到本分支的流程）
 
 ### 方式 3：Windows
 
